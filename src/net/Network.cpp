@@ -88,6 +88,9 @@ Network::~Network() {
  * we don't implement writing to the EEPROM.
  */
 void Network::setUpEthParamEEPROM(void) {
+	// turn in the clock for the AFIO module
+	RCC_APB2PeriphClockCmd(RCC_APB2Periph_AFIO, ENABLE);
+
 	// Set up GPIOs for I2C
 	GPIO_InitTypeDef gpio;
 	GPIO_StructInit(&gpio);
@@ -144,6 +147,8 @@ void Network::setUpEthParamEEPROM(void) {
  * Scans the I2C bus to locate the address of the parameter EEPROM.
  */
 void Network::probeEthParamEEPROM(void) {
+//	this->writeEthParamEEPROM();
+
 	trace_printf("Reading MAC address from I2C address 0x%02x\n", Network::ethParamI2CAddress);
 
 	// generate a START, for writing, and send the address
@@ -153,6 +158,8 @@ void Network::probeEthParamEEPROM(void) {
 	}
 
 	this->i2cWriteByte(Network::ethParamMACOffset);
+
+	this->i2cStop();
 
 	// generate another START, for reading, and read 6 bytes
 	if(this->i2cStart(Network::ethParamI2CAddress, true) == 1) {
@@ -173,6 +180,33 @@ void Network::probeEthParamEEPROM(void) {
 				 this->macAddress[4], this->macAddress[5]);
 
 	// send a STOP condition
+	this->i2cStop();
+}
+
+/**
+ * Writes a MAC address to the EEPROM.
+ */
+void Network::writeEthParamEEPROM(void) {
+	trace_puts("WRITING MAC ADDRESS TO EEPROM!");
+
+	// write a MAC address
+	const uint8_t testMac[] = {0xde, 0xad, 0xbe, 0xef, 0x14, 0x20};
+	for(int i = 0; i < 6; i++) {
+		this->macAddress[i] = testMac[i];
+	}
+
+	// generate a START, for writing, and send the address and data
+	if(this->i2cStart(Network::ethParamI2CAddress, false) == 1) {
+		trace_puts("Timeout starting I2C transmission for MAC write!\n");
+		return;
+	}
+
+	this->i2cWriteByte(Network::ethParamMACOffset);
+
+	for(int i = 0; i < 6; i++) {
+		this->i2cWriteByte(this->macAddress[i]);
+	}
+	// send stop condition
 	this->i2cStop();
 }
 
@@ -213,13 +247,14 @@ void Network::i2cWaitForIdle(void) {
 int Network::i2cStart(uint8_t address, bool read, int timeout) {
 	// sanity check timeout
 	if(timeout <= 0) {
-		timeout = 50000;
+		timeout = 20000;
 	}
 
 	uint8_t direction = read ? I2C_Direction_Receiver : I2C_Direction_Transmitter;
 
 	// wait until I2C is not busy anymore
-	this->i2cWaitForIdle();
+	// TODO: we really should do this
+//	this->i2cWaitForIdle();
 
 	// generate START condition
 	I2C_GenerateSTART(MAC_EEPROM_I2C, ENABLE);
@@ -235,7 +270,7 @@ int Network::i2cStart(uint8_t address, bool read, int timeout) {
 		}
 	}
 
-	trace_printf("Acknowledged in %i tries\n", 50000 - timeout);
+//	trace_printf("Acknowledged in %i tries\n", 50000 - timeout);
 
 	// send slave address
 	I2C_Send7bitAddress(MAC_EEPROM_I2C, (uint8_t) (address <<  1), direction);

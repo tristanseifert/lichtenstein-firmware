@@ -52,7 +52,7 @@ void OutputTask::taskEntry(void) noexcept {
 	int i = 0;
 
 	while(1) {
-		trace_printf("LED out task iteration %u\n", i++);
+//		trace_printf("LED out task iteration %u\n", i++);
 		vTaskDelay(1000);
 	}
 }

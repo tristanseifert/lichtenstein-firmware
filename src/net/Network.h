@@ -31,11 +31,12 @@ class Network {
 
 		void setUpEthParamEEPROM(void);
 		void probeEthParamEEPROM(void);
+		void writeEthParamEEPROM(void);
 
 		void _i2cScan(void);
 
 		void i2cWaitForIdle(void);
-		int i2cStart(uint8_t address, bool read = true, int timeout = 50000);
+		int i2cStart(uint8_t address, bool read = true, int timeout = 20000);
 		void i2cStop(void);
 		void i2cWriteByte(uint8_t data);
 		uint8_t i2cReadByte(bool ack = true);
