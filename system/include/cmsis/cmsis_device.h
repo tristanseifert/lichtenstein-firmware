@@ -30,4 +30,8 @@
 
 #include "stm32f10x.h"
 
+// types for the $HW preprocessor directive
+/// mustard chinese dev board (lol)
+#define HW_MUSTARD 1
+
 #endif // STM32F1_CMSIS_DEVICE_H_

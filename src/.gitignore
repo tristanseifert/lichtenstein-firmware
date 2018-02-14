@@ -1,0 +1,4 @@
+# don't commit FreeRTOS source code
+
+FreeRTOS/
+FreeRTOS-Plus-TCP/

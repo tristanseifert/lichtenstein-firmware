@@ -31,18 +31,25 @@
 #include <stdlib.h>
 #include "diag/Trace.h"
 
-// ----------------------------------------------------------------------------
-//
-// Standalone STM32F1 empty sample (trace via ITM).
-//
-// Trace support is enabled by adding the TRACE macro definition.
-// By default the trace messages are forwarded to the ITM output,
-// but can be rerouted to any device or completely suppressed, by
-// changing the definitions required in system/src/diag/trace_impl.c
-// (currently OS_USE_TRACE_ITM, OS_USE_TRACE_SEMIHOSTING_DEBUG/_STDOUT).
-//
+#include "cmsis_device.h"
 
-// ----- main() ---------------------------------------------------------------
+#include "FreeRTOS.h"
+#include "task.h"
+
+#include "board/Board.h"
+#include "clock/Clock.h"
+#include "net/Network.h"
+
+#include "ledout/Output.h"
+
+/**
+ * Stack overflow handler
+ */
+void vApplicationStackOverflowHook(TaskHandle_t xTask, signed char *pcTaskName) {
+	trace_printf("Stack overflow in task %s!", pcTaskName);
+
+	while(1);
+}
 
 // Sample pragmas to cope with warnings. Please note the related line at
 // the end of this function, used to pop the compiler diagnostics status.
@@ -51,18 +58,25 @@
 #pragma GCC diagnostic ignored "-Wmissing-declarations"
 #pragma GCC diagnostic ignored "-Wreturn-type"
 
-int
-main(int argc, char* argv[]) {
+int main(int argc, char* argv[]) {
+	// set the priority levels in the NVIC (required for FreeRTOS)
+	NVIC_PriorityGroupConfig(NVIC_PriorityGroup_4);
+
 	// initialize debug SWO output
 	trace_initialize();
+	trace_printf("Hello World!\nSystemCoreClock = %u Hz\n", SystemCoreClock);
 
-	trace_puts("Hello world!");
+	// set up hardware
+	Board::init();
+	Network::init();
 
-  // Infinite loop
-  while (1)
-    {
-       // Add your code here.
-    }
+	Clock::init();
+
+	// start tasks and other higher-level facilities
+	Output::init();
+
+	// start scheduler (this should never return!)
+    vTaskStartScheduler();
 }
 
 #pragma GCC diagnostic pop
