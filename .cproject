@@ -201,7 +201,7 @@
                                     									
                                     <listOptionValue builtIn="false" value="HW=1"/>
                                     									
-                                    <listOptionValue builtIn="false" value="GIT_REV=&quot;$(shell git describe)&quot;"/>
+                                    <listOptionValue builtIn="false" value="'GIT_REV=&quot;$(shell git describe)&quot;'"/>
                                     								
                                 </option>
                                 								
@@ -271,7 +271,7 @@
                                     									
                                     <listOptionValue builtIn="false" value="HW=1"/>
                                     									
-                                    <listOptionValue builtIn="false" value="GIT_REV=&quot;$(shell git describe)&quot;"/>
+                                    <listOptionValue builtIn="false" value="'GIT_REV=&quot;$(shell git describe)&quot;'"/>
                                     								
                                 </option>
                                 								

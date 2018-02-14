@@ -27,6 +27,22 @@ class Board {
 
 	private:
 		Board();
+		void initStatusGPIOs(void);
+
+	private:
+		void initTestGPIOs(void);
+
+		void testSwIRQ(void);
+
+		uint8_t testSwState = 0;
+
+	// this has to be public to be callable from the IRQ. do not call elsewhere
+	public:
+		static void TestSwIRQNotify(void) {
+			Board::sharedInstance()->testSwIRQ();
+		}
+
+	private:
 		virtual ~Board();
 };
 
