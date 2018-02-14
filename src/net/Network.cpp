@@ -17,6 +17,9 @@
 #define MAC_EEPROM_I2C					I2C1
 #define MAC_EEPROM_I2C_CLOCK				RCC_APB1Periph_I2C1
 
+// what speed to run the I2C bus at, in Hz
+#define	MAC_EEPROM_I2C_SPEED				(400 * 1000)
+
 // pins on which SDA and SCL are connected
 #define MAC_EEPROM_I2C_SDA_PORT			GPIOB
 #define MAC_EEPROM_I2C_SDA_PIN			GPIO_Pin_9
@@ -126,7 +129,7 @@ void Network::setUpEthParamEEPROM(void) {
 	I2C_InitTypeDef i2c;
 	I2C_StructInit(&i2c);
 
-	i2c.I2C_ClockSpeed = 50000;
+	i2c.I2C_ClockSpeed = MAC_EEPROM_I2C_SPEED;
 	i2c.I2C_Mode = I2C_Mode_I2C;
 	i2c.I2C_DutyCycle = I2C_DutyCycle_2;
 	i2c.I2C_OwnAddress1 = 0x00;

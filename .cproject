@@ -200,6 +200,8 @@
                                     <listOptionValue builtIn="false" value="HSE_VALUE=25000000"/>
                                     									
                                     <listOptionValue builtIn="false" value="HW=1"/>
+                                    									
+                                    <listOptionValue builtIn="false" value="GIT_REV=&quot;$(shell git describe)&quot;"/>
                                     								
                                 </option>
                                 								
@@ -268,6 +270,8 @@
                                     <listOptionValue builtIn="false" value="HSE_VALUE=25000000"/>
                                     									
                                     <listOptionValue builtIn="false" value="HW=1"/>
+                                    									
+                                    <listOptionValue builtIn="false" value="GIT_REV=&quot;$(shell git describe)&quot;"/>
                                     								
                                 </option>
                                 								

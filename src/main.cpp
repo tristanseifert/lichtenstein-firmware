@@ -64,7 +64,7 @@ int main(int argc, char* argv[]) {
 
 	// initialize debug SWO output
 	trace_initialize();
-	trace_printf("Hello World!\nSystemCoreClock = %u Hz\n", SystemCoreClock);
+	trace_printf("lichtenstein %s\nSystemCoreClock = %u Hz\n", GIT_REV, SystemCoreClock);
 
 	// set up hardware
 	Board::init();
