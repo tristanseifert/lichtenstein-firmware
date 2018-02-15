@@ -25,7 +25,7 @@ class Network {
 
 	private:
 		static const uint8_t ethParamI2CAddress = 0x50;
-		static const uint8_t ethParamMACOffset = 0x80;
+		static const uint8_t ethParamMACOffset = 0xFA;
 
 		uint8_t macAddress[6];
 
