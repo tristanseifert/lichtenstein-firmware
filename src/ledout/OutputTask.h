@@ -14,6 +14,8 @@
 
 namespace ledout {
 	class OutputTask {
+		friend class Output;
+
 		public:
 			OutputTask();
 			virtual ~OutputTask() noexcept;

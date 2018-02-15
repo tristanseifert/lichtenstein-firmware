@@ -85,23 +85,26 @@
  *----------------------------------------------------------*/
 #define configUSE_PORT_OPTIMISED_TASK_SELECTION 1
 
-#define configUSE_PREEMPTION			1
-#define configUSE_IDLE_HOOK			1
-#define configUSE_TICK_HOOK			1
-#define configCPU_CLOCK_HZ			((unsigned long) 72000000)
-#define configTICK_RATE_HZ			((TickType_t) 100)
-#define configMAX_PRIORITIES			(5)
-#define configMINIMAL_STACK_SIZE		((unsigned short) 100)
+#define configUSE_PREEMPTION				1
+#define configUSE_IDLE_HOOK				1
+#define configUSE_TICK_HOOK				1
+#define configCPU_CLOCK_HZ				((unsigned long) 72000000)
+#define configTICK_RATE_HZ				((TickType_t) 100)
+#define configMAX_PRIORITIES				(5)
+#define configMINIMAL_STACK_SIZE			((unsigned short) 100)
 
 // size of the heap
-#define configTOTAL_HEAP_SIZE		((size_t) (24 * 1024))
-#define configMAX_TASK_NAME_LEN		(16)
-#define configUSE_TRACE_FACILITY		1
-#define configUSE_16_BIT_TICKS		0
-#define configIDLE_SHOULD_YIELD		0
+#define configTOTAL_HEAP_SIZE			((size_t) (24 * 1024))
+#define configMAX_TASK_NAME_LEN			(16)
+#define configUSE_TRACE_FACILITY			1
+#define configUSE_16_BIT_TICKS			0
+#define configIDLE_SHOULD_YIELD			0
+
+// disallow static allocation
+#define configSUPPORT_STATIC_ALLOCATION	0
 
 /* Co-routine definitions. */
-#define configUSE_CO_ROUTINES 		0
+#define configUSE_CO_ROUTINES 			0
 
 #define configUSE_MUTEXES				1
 #define configUSE_COUNTING_SEMAPHORES 	1
