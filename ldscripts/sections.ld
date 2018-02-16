@@ -42,6 +42,8 @@ _Minimum_Stack_Size = 256 ;
 PROVIDE ( _Heap_Begin = _end_noinit ) ;
 PROVIDE ( _Heap_Limit = __stack - __Main_Stack_Size ) ;
 
+PROVIDE ( _Heap_Size = _Heap_Limit - _Heap_Begin ) ;
+
 /* 
  * The entry point is informative, for debuggers and simulators,
  * since the Cortex-M vector points to it anyway.
@@ -323,7 +325,7 @@ SECTIONS
         
         *(.noinit .noinit.*) 
         
-         . = ALIGN(4) ;
+         . = ALIGN(16) ;
         _end_noinit = .;   
     } > RAM
     
@@ -332,6 +334,8 @@ SECTIONS
     PROVIDE ( _end = _end_noinit );
     PROVIDE ( __end = _end_noinit );
     PROVIDE ( __end__ = _end_noinit );
+    
+    __ram_allocated_end__ = .;
     
     /*
      * Used for validation only, do not allocate anything here!

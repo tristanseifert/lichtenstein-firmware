@@ -24,6 +24,8 @@ MEMORY
   MEMORY_ARRAY (xrw)  : ORIGIN = 0x00000000, LENGTH = 0
 }
 
+__ram_size__ = LENGTH(RAM);
+
 /*
  * For external ram use something like:
 

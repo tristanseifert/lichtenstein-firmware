@@ -51,6 +51,19 @@ void vApplicationStackOverflowHook(TaskHandle_t xTask, signed char *pcTaskName) 
 	while(1);
 }
 
+/**
+ * Define heap sections. We want to set this up so that the heap spans the
+ * entirety of the unused BSS.
+ */
+extern uint32_t __ram_size__[];
+extern uint32_t _Heap_Begin[];
+extern uint32_t _Heap_Size[];
+
+const HeapRegion_t xHeapRegions[] = {
+    { (uint8_t *) _Heap_Begin, (size_t) _Heap_Size},
+    { NULL, 0 } /* Terminates the array. */
+};
+
 // Sample pragmas to cope with warnings. Please note the related line at
 // the end of this function, used to pop the compiler diagnostics status.
 #pragma GCC diagnostic push
@@ -64,7 +77,11 @@ int main(int argc, char* argv[]) {
 
 	// initialize debug SWO output
 	trace_initialize();
-	trace_printf("lichtenstein %s\nSystemCoreClock = %u Hz\n", GIT_REV, SystemCoreClock);
+	trace_printf("lichtenstein %s\nSystemCoreClock = %uHz, %u bytes of RAM\n", GIT_REV, SystemCoreClock, __ram_size__);
+
+	// set up FreeRTOS heap
+	trace_printf("Allocating heap region at 0x%x sized %u bytes\n", xHeapRegions[0].pucStartAddress, xHeapRegions[0].xSizeInBytes);
+	vPortDefineHeapRegions(xHeapRegions);
 
 	// set up hardware
 	Board::init();
@@ -74,6 +91,10 @@ int main(int argc, char* argv[]) {
 
 	// start tasks and other higher-level facilities
 	Output::init();
+
+	// some debugging to diagnose memory usage
+	trace_printf("heap usage: %u bytes free, %u bytes total\n",
+				 xPortGetFreeHeapSize(), _Heap_Size);
 
 	// start scheduler (this should never return!)
     vTaskStartScheduler();

@@ -331,7 +331,7 @@ void Board::initConfigEEPROM(void) {
     this->i2cResetFix();
 
     // TEST: write config info
-    this->_testWriteBoardConfig();
+//    this->_testWriteBoardConfig();
 
     // read out the config info and verify it
     memset(&this->config, 0, sizeof(board_config_t));
@@ -344,11 +344,11 @@ void Board::initConfigEEPROM(void) {
     }
 
     if(this->config.version != BOARD_CONFIG_VERSION) {
-			trace_printf("ERROR: invalid config version %i\n", this->config.version);
+			trace_printf("ERROR: invalid config version %u\n", this->config.version);
 	}
 
     if(this->config.magic != BOARD_CONFIG_MAGIC) {
-		trace_printf("ERROR: invalid magic %i\n", this->config.magic);
+		trace_printf("ERROR: invalid magic %u\n", this->config.magic);
 	}
 
     trace_printf("running on hw 0x%02x, version 0x%02x.%02x\n",
@@ -397,6 +397,9 @@ int Board::i2cStart(uint8_t address, bool read, int timeout) {
 
 	uint8_t direction = read ? I2C_Direction_Receiver : I2C_Direction_Transmitter;
 
+	// re-enable acknowledgements
+	I2C_AcknowledgeConfig(CFG_EEPROM_I2C, ENABLE);
+
 	// wait until I2C is not busy anymore
 	// TODO: we really should do this
 //	this->i2cWaitForIdle();
@@ -405,9 +408,11 @@ int Board::i2cStart(uint8_t address, bool read, int timeout) {
 	I2C_GenerateSTART(CFG_EEPROM_I2C, ENABLE);
 
 	// wait for I2C EV5 (slave has acknowledged start condition)
+	int counter = timeout;
+
 	while(!I2C_CheckEvent(CFG_EEPROM_I2C, I2C_EVENT_MASTER_MODE_SELECT)) {
 		// decrement timeout
-		if(timeout-- == 0) {
+		if(counter-- == 0) {
 			// generate a stop condition and return if it hits zero
 			this->i2cStop();
 
@@ -415,7 +420,7 @@ int Board::i2cStart(uint8_t address, bool read, int timeout) {
 		}
 	}
 
-//	trace_printf("Acknowledged in %i tries\n", 50000 - timeout);
+//	trace_printf("Acknowledged in %u tries\n", 50000 - timeout);
 
 	// send slave address
 	I2C_Send7bitAddress(CFG_EEPROM_I2C, (uint8_t) (address <<  1), direction);
@@ -424,13 +429,26 @@ int Board::i2cStart(uint8_t address, bool read, int timeout) {
 	 * wait for I2C1 EV6, check if the slave either acknowledged the master as
 	 * a transmitter, or as a receiver
 	 */
+	counter = timeout;
 	if(direction == I2C_Direction_Transmitter) {
 		while(!I2C_CheckEvent(CFG_EEPROM_I2C, I2C_EVENT_MASTER_TRANSMITTER_MODE_SELECTED)) {
-			// do stuff here?
+			// decrement timeout
+			if(counter-- == 0) {
+				// generate a stop condition and return if it hits zero
+				this->i2cStop();
+
+				return 1;
+			}
 		}
 	} else if(direction == I2C_Direction_Receiver) {
 		while(!I2C_CheckEvent(CFG_EEPROM_I2C, I2C_EVENT_MASTER_RECEIVER_MODE_SELECTED)) {
-			// do stuff here?
+			// decrement timeout
+			if(counter-- == 0) {
+				// generate a stop condition and return if it hits zero
+				this->i2cStop();
+
+				return 1;
+			}
 		}
 	}
 
@@ -461,18 +479,23 @@ void Board::i2cWriteByte(uint8_t data) {
  * Reads a single byte from the device. If ack is true, an acknowledgement is
  * sent after the read, otherwise none is sent.
  */
-uint8_t Board::i2cReadByte(bool ack) {
+uint8_t Board::i2cReadByte(bool ack, int timeout) {
+	int counter = timeout;
+
 	// set the acknowledge config
 	if(ack) {
 		I2C_AcknowledgeConfig(CFG_EEPROM_I2C, ENABLE);
 	} else {
 		I2C_AcknowledgeConfig(CFG_EEPROM_I2C, DISABLE);
-		I2C_GenerateSTOP(CFG_EEPROM_I2C, ENABLE);
+//		I2C_GenerateSTOP(CFG_EEPROM_I2C, ENABLE);
 	}
 
 	// wait to receive a byte
 	while(!I2C_CheckEvent(CFG_EEPROM_I2C, I2C_EVENT_MASTER_BYTE_RECEIVED)) {
-		// do stuff?
+		if(counter-- == 0) {
+			trace_printf("READ ERROR: timeout reading byte\n");
+			return 0;
+		}
 	}
 
 	// read the byte
@@ -538,7 +561,8 @@ void Board::configEEPROMRead(void *buf, uint8_t address, uint8_t numBytes) {
 	uint8_t *byteBuf = static_cast<uint8_t *>(buf);
 
 	for(int i = 0; i < numBytes; i++) {
-		byteBuf[i] = this->i2cReadByte((i == (numBytes - 1)) ? false : true);
+		bool acknowledge = (i == (numBytes - 1)) ? false : true;
+		byteBuf[i] = this->i2cReadByte(acknowledge);
 	}
 
 	// send a STOP condition
@@ -581,7 +605,7 @@ void Board::configEEPROMWrite(void *buf, uint8_t address, uint8_t numBytes) {
 
 	// send address
 #if DEBUG_I2C_WRITES
-	trace_printf("\tfirst page is 0x%02x, writing to offset 0x%02x, address 0x%02x, (%i bytes)\n\t", firstPage, offsetIntoPage, writeAddress, bytesToWrite);
+	trace_printf("\tfirst page is 0x%02x, writing to offset 0x%02x, address 0x%02x, (%u bytes)\n\t", firstPage, offsetIntoPage, writeAddress, bytesToWrite);
 #endif
 
 	if(this->i2cStart(Board::configEEPROMI2CAddress, false, Board::configEEPROMWriteTimeout) == 1) {
@@ -614,13 +638,13 @@ void Board::configEEPROMWrite(void *buf, uint8_t address, uint8_t numBytes) {
 		int bytesLeftToWrite = numBytes - bytesWritten;
 
 #if DEBUG_I2C_WRITES
-		trace_printf("\tremaining bytes to write: %i, starting at 0x%02x\n", bytesLeftToWrite, writeAddress);
+		trace_printf("\tremaining bytes to write: %u, starting at 0x%02x\n", bytesLeftToWrite, writeAddress);
 #endif
 
 		for(int i = 0, j = bytesLeftToWrite; i < j; i++) {
 			if((writeAddress & Board::configEEPROMPageSizeMask) == 0) {
 #if DEBUG_I2C_WRITES
-				trace_printf("\tstarting page write at 0x%02x for %i bytes\n\t", writeAddress, bytesLeftToWrite & Board::configEEPROMPageSizeMask);
+				trace_printf("\tstarting page write at 0x%02x for %u bytes\n\t", writeAddress, bytesLeftToWrite & Board::configEEPROMPageSizeMask);
 #endif
 
 				// send address
@@ -647,10 +671,12 @@ void Board::configEEPROMWrite(void *buf, uint8_t address, uint8_t numBytes) {
 			// have we reached the end of the page?
 			if((writeAddress & Board::configEEPROMPageSizeMask) == 0) {
 #if DEBUG_I2C_WRITES
-				trace_printf("\n\tsending stop condition after writing %i bytes, have %i bytes left\n", Board::configEEPROMPageSize, numBytes - bytesWritten);
+				trace_printf("\n\tsending stop condition after writing %u bytes, have %u bytes left\n", Board::configEEPROMPageSize, numBytes - bytesWritten);
 #endif
 
-				this->i2cStop();
+				if((numBytes - bytesWritten) != 0) {
+					this->i2cStop();
+				}
 			}
 		}
 
@@ -681,7 +707,7 @@ uint8_t Board::calculateConfigChecksum(board_config_t *cfg) {
 	int size = sizeof(board_config_t);
 	int positionOfChecksumFromEnd = size - offsetof(board_config_t, checksum);
 
-//	trace_printf("Size of board_config_t: %i, checksum at byte %i from end\n", size, positionOfChecksumFromEnd);
+//	trace_printf("Size of board_config_t: %u, checksum at byte %u from end\n", size, positionOfChecksumFromEnd);
 
 	// calculate the checksum over the size
 	uint8_t accumulator = 0;
