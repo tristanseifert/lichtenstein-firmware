@@ -24,7 +24,10 @@ class Network {
 		void startNetServices(void);
 
 	private:
-		static const uint8_t ethParamI2CAddress = 0x50;
+		void setUpMAC(void);
+		void setUpPHY(void);
+
+	private:
 		static const uint8_t ethParamMACOffset = 0xFA;
 
 		uint8_t macAddress[6];
@@ -34,12 +37,6 @@ class Network {
 		void writeEthParamEEPROM(void);
 
 		void _i2cScan(void);
-
-		void i2cWaitForIdle(void);
-		int i2cStart(uint8_t address, bool read = true, int timeout = 20000);
-		void i2cStop(void);
-		void i2cWriteByte(uint8_t data);
-		uint8_t i2cReadByte(bool ack = true);
 
 	private:
 		virtual ~Network();

@@ -9,8 +9,8 @@
 #include <Errors.h>
 
 // configuration
-#define LEDOUT_TASK_STACK_SZ configMINIMAL_STACK_SIZE
-#define LEDOUT_TASK_PRIORITY (3)
+#define LEDOUT_TASK_STACK_SZ 	configMINIMAL_STACK_SIZE
+#define LEDOUT_TASK_PRIORITY		(3)
 
 namespace ledout {
 

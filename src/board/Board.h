@@ -8,7 +8,13 @@
 #ifndef BOARD_BOARD_H_
 #define BOARD_BOARD_H_
 
-#include <stdint.h>
+#include <cstdint>
+#include <cstddef>
+
+#include "EEPROMBoardConfig.h"
+
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wpadded"
 
 class Board {
 	public:
@@ -43,7 +49,40 @@ class Board {
 		}
 
 	private:
+		static const uint8_t configEEPROMI2CAddress = 0x50;
+		// page size mask (for 24AA02E48)
+		static const uint8_t configEEPROMPageSize = 0x08;
+		static const uint8_t configEEPROMPageSizeMask = 0x07;
+
+		static const uint8_t configEEPROMHWInfoOffset = 0x00;
+		static const int configEEPROMWriteTimeout = 50000;
+
+		board_config_t config;
+
+		void initConfigEEPROM(void);
+
+		void i2cResetFix(void);
+
+		void i2cWaitForIdle(void);
+		int i2cStart(uint8_t address, bool read = true, int timeout = 20000);
+		void i2cStop(void);
+		void i2cWriteByte(uint8_t data);
+		uint8_t i2cReadByte(bool ack = true);
+
+		void _testWriteBoardConfig(void);
+
+	public:
+		void configEEPROMRead(void *buf, uint8_t address, uint8_t numBytes);
+
+	private:
+		void configEEPROMWrite(void *buf, uint8_t address, uint8_t numBytes);
+
+		static uint8_t calculateConfigChecksum(board_config_t *cfg);
+
+	private:
 		virtual ~Board();
 };
+
+#pragma GCC diagnostic pop
 
 #endif /* BOARD_BOARD_H_ */

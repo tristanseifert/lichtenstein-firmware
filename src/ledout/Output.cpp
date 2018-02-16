@@ -14,33 +14,33 @@
 
 #if HW == HW_MUSTARD
 // level shifter output enable (active low)
-#define LED_OE_PORT				GPIOB
-#define LED_OE_PIN				GPIO_Pin_14
-#define LED_OE_GPIO_CLOCK		RCC_APB2Periph_GPIOB
+#define LED_OE_PORT					GPIOB
+#define LED_OE_PIN					GPIO_Pin_14
+#define LED_OE_GPIO_CLOCK			RCC_APB2Periph_GPIOB
 
-#define LED_OE_ACTIVE_LOW		1
+#define LED_OE_ACTIVE_LOW			1
 
 // LED output 0 (SPI2_MOSI)
-#define LED_OUT0_PORT			GPIOB
-#define LED_OUT0_PIN				GPIO_Pin_15
-#define LED_OUT0_GPIO_CLOCK		RCC_APB2Periph_GPIOB
+#define LED_OUT0_PORT				GPIOB
+#define LED_OUT0_PIN					GPIO_Pin_15
+#define LED_OUT0_GPIO_CLOCK			RCC_APB2Periph_GPIOB
 
 // baud rate divisor (SPI[2,3] have 36MHz clock)
-#define LED_OUT0_SPI_BAUD		SPI_BaudRatePrescaler_16
-#define LED_OUT0_SPI				SPI2
-#define LED_OUT0_NEEDS_REMAP		0
-#define LED_OUT0_REMAP			GPIO_Remap_SPI2
+#define LED_OUT0_SPI_BAUD			SPI_BaudRatePrescaler_16
+#define LED_OUT0_SPI					SPI2
+#define LED_OUT0_NEEDS_REMAP			0
+#define LED_OUT0_REMAP				GPIO_Remap_SPI2
 
 // LED output 1 (SPI3_MOSI AF)
-#define LED_OUT1_PORT			GPIOC
-#define LED_OUT1_PIN				GPIO_Pin_12
-#define LED_OUT1_GPIO_CLOCK		RCC_APB2Periph_GPIOC
+#define LED_OUT1_PORT				GPIOC
+#define LED_OUT1_PIN					GPIO_Pin_12
+#define LED_OUT1_GPIO_CLOCK			RCC_APB2Periph_GPIOC
 
 // baud rate divisor (SPI[2,3] have 36MHz clock)
-#define LED_OUT1_SPI_BAUD		SPI_BaudRatePrescaler_16
-#define LED_OUT1_SPI				SPI3
-#define LED_OUT1_NEEDS_REMAP		1
-#define LED_OUT1_REMAP			GPIO_Remap_SPI3
+#define LED_OUT1_SPI_BAUD			SPI_BaudRatePrescaler_16
+#define LED_OUT1_SPI					SPI3
+#define LED_OUT1_NEEDS_REMAP			1
+#define LED_OUT1_REMAP				GPIO_Remap_SPI3
 
 #endif
 
