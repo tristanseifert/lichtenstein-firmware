@@ -174,6 +174,8 @@
                                     <listOptionValue builtIn="false" value="&quot;${workspace_loc:/${ProjName}/src/FreeRTOS-Plus-TCP/portable/Compiler/GCC}&quot;"/>
                                     									
                                     <listOptionValue builtIn="false" value="&quot;${workspace_loc:/${ProjName}/src/FreeRTOS-Plus-TCP/portable/NetworkInterface/include}&quot;"/>
+                                    									
+                                    <listOptionValue builtIn="false" value="&quot;${workspace_loc:/${ProjName}/lib}&quot;"/>
                                     								
                                 </option>
                                 								
@@ -230,6 +232,8 @@
                                     <listOptionValue builtIn="false" value="${workspace_loc:/${ProjName}/src/include}"/>
                                     									
                                     <listOptionValue builtIn="false" value="${workspace_loc:/${ProjName}/src/FreeRTOS-Plus-TCP/include}"/>
+                                    									
+                                    <listOptionValue builtIn="false" value="${workspace_loc:/${ProjName}/lib}"/>
                                     								
                                 </option>
                                 								
@@ -366,6 +370,8 @@
                         </toolChain>
                         					
                     </folderInfo>
+                    					
+                    <fileInfo id="ilg.gnuarmeclipse.managedbuild.cross.config.elf.debug.51379113.140777170" name="Makefile" rcbsApplicability="disable" resourcePath="lib/mini-printf/Makefile" toolsToInvoke=""/>
                     					
                     <folderInfo id="ilg.gnuarmeclipse.managedbuild.cross.config.elf.debug.51379113.114817319" name="/" resourcePath="src/FreeRTOS-Plus-TCP/protocols">
                         						
@@ -504,6 +510,8 @@
                     </folderInfo>
                     					
                     <sourceEntries>
+                        						
+                        <entry excluding="mini-printf/Makefile|mini-printf/test1.c" flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name="lib"/>
                         						
                         <entry excluding="FreeRTOS-Plus-TCP/portable/NetworkInterface/STM32Fxx|FreeRTOS-Plus-TCP/protocols|FreeRTOS-Plus-TCP/portable/NetworkInterface/Zynq|FreeRTOS-Plus-TCP/portable/NetworkInterface/WinPCap|FreeRTOS-Plus-TCP/portable/NetworkInterface/STM32F7xx|FreeRTOS-Plus-TCP/portable/NetworkInterface/SH2A|FreeRTOS-Plus-TCP/portable/NetworkInterface/LPC18xx|FreeRTOS-Plus-TCP/portable/NetworkInterface/LPC17xx|FreeRTOS-Plus-TCP/portable/NetworkInterface/ksz8851snl|FreeRTOS-Plus-TCP/portable/NetworkInterface/ATSAM4E|FreeRTOS-Plus-TCP/portable/Compiler/Renesas|FreeRTOS-Plus-TCP/portable/Compiler/MSVC|FreeRTOS-Plus-TCP/portable/Compiler/IAR|FreeRTOS-Plus-TCP/protocols/HTTP|FreeRTOS-Plus-TCP/protocols/FTP|FreeRTOS-Plus-TCP/portable/BufferManagement/BufferAllocation_2.c|FreeRTOS/portable/MemMang/heap_5.c|FreeRTOS/portable/MemMang/heap_4.c|FreeRTOS/portable/MemMang/heap_3.c|FreeRTOS/portable/MemMang/heap_2.c|FreeRTOS/portable/GCC/TriCore_1782|FreeRTOS/portable/GCC/STR75x|FreeRTOS/portable/GCC/RX600v2|FreeRTOS/portable/GCC/RX600|FreeRTOS/portable/GCC/RX100|FreeRTOS/portable/GCC/RL78|FreeRTOS/portable/GCC/PPC440_Xilinx|FreeRTOS/portable/GCC/PPC405_Xilinx|FreeRTOS/portable/GCC/NiosII|FreeRTOS/portable/GCC/MSP430F449|FreeRTOS/portable/GCC/MicroBlazeV9|FreeRTOS/portable/GCC/MicroBlazeV8|FreeRTOS/portable/GCC/MicroBlaze|FreeRTOS/portable/GCC/MCF5235|FreeRTOS/portable/GCC/IA32_flat|FreeRTOS/portable/GCC/HCS12|FreeRTOS/portable/GCC/H8S2329|FreeRTOS/portable/GCC/CORTUS_APS3|FreeRTOS/portable/GCC/ColdFire_V2|FreeRTOS/portable/GCC/AVR32_UC3|FreeRTOS/portable/GCC/ATMega323|FreeRTOS/portable/GCC/ARM7_LPC23xx|FreeRTOS/portable/GCC/ARM7_LPC2000|FreeRTOS/portable/GCC/ARM7_AT91SAM7S|FreeRTOS/portable/GCC/ARM7_AT91FR40008|FreeRTOS/portable/GCC/ARM_CRx_No_GIC|FreeRTOS/portable/GCC/ARM_CR5|FreeRTOS/portable/GCC/ARM_CM7|FreeRTOS/portable/GCC/ARM_CM4F|FreeRTOS/portable/GCC/ARM_CM4_MPU|FreeRTOS/portable/GCC/ARM_CM3_MPU|FreeRTOS/portable/GCC/ARM_CM0|FreeRTOS/portable/GCC/ARM_CA9|FreeRTOS/portable/GCC/ARM_CA53_64_BIT|FreeRTOS/portable/WizC|FreeRTOS/portable/Tasking|FreeRTOS/portable/Softune|FreeRTOS/portable/SDCC|FreeRTOS/portable/RVDS|FreeRTOS/portable/Rowley|FreeRTOS/portable/Renesas|FreeRTOS/portable/Paradigm|FreeRTOS/portable/oWatcom|FreeRTOS/portable/MSVC-MingW|FreeRTOS/portable/MPLAB|FreeRTOS/portable/MikroC|FreeRTOS/portable/Keil|FreeRTOS/portable/IAR|FreeRTOS/portable/Common|FreeRTOS/portable/CodeWarrior|FreeRTOS/portable/CCS|FreeRTOS/portable/BCC|FreeRTOS/croutine.c" flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name="src"/>
                         						
@@ -915,7 +923,11 @@
                         					
                     </fileInfo>
                     					
+                    <fileInfo id="ilg.gnuarmeclipse.managedbuild.cross.config.elf.release.1787883260.1367857453" name="Makefile" rcbsApplicability="disable" resourcePath="lib/mini-printf/Makefile" toolsToInvoke=""/>
+                    					
                     <sourceEntries>
+                        						
+                        <entry excluding="mini-printf/Makefile|mini-printf/test1.c" flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name="lib"/>
                         						
                         <entry excluding="FreeRTOS-Plus-TCP/portable/NetworkInterface/STM32Fxx|FreeRTOS-Plus-TCP/protocols|FreeRTOS-Plus-TCP/portable/NetworkInterface/Zynq|FreeRTOS-Plus-TCP/portable/NetworkInterface/WinPCap|FreeRTOS-Plus-TCP/portable/NetworkInterface/STM32F7xx|FreeRTOS-Plus-TCP/portable/NetworkInterface/SH2A|FreeRTOS-Plus-TCP/portable/NetworkInterface/LPC18xx|FreeRTOS-Plus-TCP/portable/NetworkInterface/LPC17xx|FreeRTOS-Plus-TCP/portable/NetworkInterface/ksz8851snl|FreeRTOS-Plus-TCP/portable/NetworkInterface/ATSAM4E|FreeRTOS-Plus-TCP/portable/Compiler/Renesas|FreeRTOS-Plus-TCP/portable/Compiler/MSVC|FreeRTOS-Plus-TCP/portable/Compiler/IAR|FreeRTOS-Plus-TCP/protocols/HTTP|FreeRTOS-Plus-TCP/protocols/FTP|FreeRTOS-Plus-TCP/portable/BufferManagement/BufferAllocation_2.c|FreeRTOS/portable/MemMang/heap_5.c|FreeRTOS/portable/MemMang/heap_4.c|FreeRTOS/portable/MemMang/heap_3.c|FreeRTOS/portable/MemMang/heap_2.c|FreeRTOS/portable/GCC/TriCore_1782|FreeRTOS/portable/GCC/STR75x|FreeRTOS/portable/GCC/RX600v2|FreeRTOS/portable/GCC/RX600|FreeRTOS/portable/GCC/RX100|FreeRTOS/portable/GCC/RL78|FreeRTOS/portable/GCC/PPC440_Xilinx|FreeRTOS/portable/GCC/PPC405_Xilinx|FreeRTOS/portable/GCC/NiosII|FreeRTOS/portable/GCC/MSP430F449|FreeRTOS/portable/GCC/MicroBlazeV9|FreeRTOS/portable/GCC/MicroBlazeV8|FreeRTOS/portable/GCC/MicroBlaze|FreeRTOS/portable/GCC/MCF5235|FreeRTOS/portable/GCC/IA32_flat|FreeRTOS/portable/GCC/HCS12|FreeRTOS/portable/GCC/H8S2329|FreeRTOS/portable/GCC/CORTUS_APS3|FreeRTOS/portable/GCC/ColdFire_V2|FreeRTOS/portable/GCC/AVR32_UC3|FreeRTOS/portable/GCC/ATMega323|FreeRTOS/portable/GCC/ARM7_LPC23xx|FreeRTOS/portable/GCC/ARM7_LPC2000|FreeRTOS/portable/GCC/ARM7_AT91SAM7S|FreeRTOS/portable/GCC/ARM7_AT91FR40008|FreeRTOS/portable/GCC/ARM_CRx_No_GIC|FreeRTOS/portable/GCC/ARM_CR5|FreeRTOS/portable/GCC/ARM_CM7|FreeRTOS/portable/GCC/ARM_CM4F|FreeRTOS/portable/GCC/ARM_CM4_MPU|FreeRTOS/portable/GCC/ARM_CM3_MPU|FreeRTOS/portable/GCC/ARM_CM0|FreeRTOS/portable/GCC/ARM_CA9|FreeRTOS/portable/GCC/ARM_CA53_64_BIT|FreeRTOS/portable/WizC|FreeRTOS/portable/Tasking|FreeRTOS/portable/Softune|FreeRTOS/portable/SDCC|FreeRTOS/portable/RVDS|FreeRTOS/portable/Rowley|FreeRTOS/portable/Renesas|FreeRTOS/portable/Paradigm|FreeRTOS/portable/oWatcom|FreeRTOS/portable/MSVC-MingW|FreeRTOS/portable/MPLAB|FreeRTOS/portable/MikroC|FreeRTOS/portable/Keil|FreeRTOS/portable/IAR|FreeRTOS/portable/Common|FreeRTOS/portable/CodeWarrior|FreeRTOS/portable/CCS|FreeRTOS/portable/BCC|FreeRTOS/croutine.c" flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name="src"/>
                         						
@@ -972,5 +984,21 @@
     <storageModule moduleId="org.eclipse.cdt.core.LanguageSettingsProviders"/>
     	
     <storageModule moduleId="org.eclipse.cdt.make.core.buildtargets"/>
+    	
+    <storageModule moduleId="refreshScope" versionNumber="2">
+        		
+        <configuration configurationName="Debug">
+            			
+            <resource resourceType="PROJECT" workspacePath="/lichtenstein-fw"/>
+            		
+        </configuration>
+        		
+        <configuration configurationName="Release">
+            			
+            <resource resourceType="PROJECT" workspacePath="/lichtenstein-fw"/>
+            		
+        </configuration>
+        	
+    </storageModule>
     
 </cproject>

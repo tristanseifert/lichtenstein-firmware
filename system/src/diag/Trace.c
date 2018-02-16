@@ -34,6 +34,8 @@
 #include "diag/Trace.h"
 #include "string.h"
 
+#include "mini-printf/mini-printf.h"
+
 #ifndef OS_INTEGER_TRACE_PRINTF_TMP_ARRAY_SIZE
 #define OS_INTEGER_TRACE_PRINTF_TMP_ARRAY_SIZE (128)
 #endif
@@ -41,8 +43,7 @@
 // ----------------------------------------------------------------------------
 
 int
-trace_printf(const char* format, ...)
-{
+trace_printf(const char* format, ...) {
   int ret;
   va_list ap;
 
@@ -53,7 +54,7 @@ trace_printf(const char* format, ...)
   static char buf[OS_INTEGER_TRACE_PRINTF_TMP_ARRAY_SIZE];
 
   // Print to the local buffer
-  ret = vsnprintf (buf, sizeof(buf), format, ap);
+  ret = mini_vsnprintf(buf, sizeof(buf), format, ap);
   if (ret > 0)
     {
       // Transfer the buffer to the device
@@ -76,21 +77,6 @@ trace_putchar(int c)
 {
   trace_write((const char*)&c, 1);
   return c;
-}
-
-void
-trace_dump_args(int argc, char* argv[])
-{
-  trace_printf("main(argc=%d, argv=[", argc);
-  for (int i = 0; i < argc; ++i)
-    {
-      if (i != 0)
-        {
-          trace_printf(", ");
-        }
-      trace_printf("\"%s\"", argv[i]);
-    }
-  trace_printf("]);\n");
 }
 
 // ----------------------------------------------------------------------------
