@@ -109,7 +109,7 @@ Board *Board::sharedInstance() {
  */
 Board::Board() {
 	this->initStatusGPIOs();
-	this->initTestGPIOs();
+//	this->initTestGPIOs();
 	this->initConfigEEPROM();
 }
 Board::~Board() {

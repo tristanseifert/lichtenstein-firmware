@@ -61,7 +61,7 @@ extern uint32_t _Heap_Size[];
 
 const HeapRegion_t xHeapRegions[] = {
     { (uint8_t *) _Heap_Begin, (size_t) _Heap_Size},
-    { NULL, 0 } /* Terminates the array. */
+    { NULL, 0 }
 };
 
 // Sample pragmas to cope with warnings. Please note the related line at

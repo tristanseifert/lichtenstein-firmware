@@ -12,6 +12,8 @@
 #include "FreeRTOS.h"
 #include "task.h"
 
+#include "RGBPixel.h"
+
 namespace ledout {
 	class OutputTask {
 		friend class Output;
@@ -23,7 +25,19 @@ namespace ledout {
 		private:
 			friend void _OutputTaskTrampoline(void *);
 
+			void allocBuffers(void);
+
 			void taskEntry(void) noexcept;
+
+		private:
+			void convertBuffer(int buffer);
+
+		private:
+			// max number of output buffers we can store
+			static const int maxOutputBuffers = 4;
+
+			rgbw_pixel_t *rgbwBuffer[maxOutputBuffers];
+			uint8_t *outputBuffer[maxOutputBuffers];
 
 		private:
 			TaskHandle_t handle;

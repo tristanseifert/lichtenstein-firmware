@@ -35,6 +35,8 @@ class Output {
 	private:
 		static const int NumOutputChannels = 2;
 
+		// this is only public so the ISRs can access it
+	public:
 		SemaphoreHandle_t dmaSemaphores[NumOutputChannels];
 
 	private:
