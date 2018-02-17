@@ -18,11 +18,11 @@
 
 #include <cstring>
 
-#define ADDR_BITBAND(base, bit)	(uint32_t *) (0x22000000 + ((((uint32_t) base) - 0x20000000) * 32) + (bit * 4))
+#define ADDR_BITBAND(base, bit)				(uint32_t *) (0x22000000 + ((((uint32_t) base) - 0x20000000) * 32) + (bit * 4))
 
 // configuration
-#define LEDOUT_TASK_STACK_SZ 	configMINIMAL_STACK_SIZE
-#define LEDOUT_TASK_PRIORITY		(3)
+#define LEDOUT_TASK_STACK_SZ 				configMINIMAL_STACK_SIZE
+#define LEDOUT_TASK_PRIORITY					(3)
 
 // size of the output buffers
 static const int numOutputChannels = 2;
@@ -97,6 +97,14 @@ void OutputTask::allocBuffers(void) {
 		// clear them
 		memset(this->rgbwBuffer[i], 0, pixelBufSz);
 		memset(this->outputBuffer[i], 0, outputBufSz);
+
+		this->rgbwBuffer[0][0].r = 0x80;
+		this->rgbwBuffer[0][1].g = 0x80;
+		this->rgbwBuffer[0][2].b = 0x80;
+		this->rgbwBuffer[0][3].w = 0x80;
+
+		this->rgbwBuffer[0][6].r = 0x80;
+		this->rgbwBuffer[0][6].g = 0x80;
 	}
 }
 
@@ -121,13 +129,13 @@ void OutputTask::taskEntry(void) noexcept {
 		}
 
 
-		this->rgbwBuffer[0][0].r++;
-		this->rgbwBuffer[0][1].g++;
-		this->rgbwBuffer[0][2].b++;
-		this->rgbwBuffer[0][3].w++;
+		this->rgbwBuffer[0][0].r += 1;
+		this->rgbwBuffer[0][1].g += 2;
+		this->rgbwBuffer[0][2].b += 3;
+		this->rgbwBuffer[0][3].w += 4;
 
 		// delay lol
-		vTaskDelay(10);
+		vTaskDelay(4);
 	}
 }
 

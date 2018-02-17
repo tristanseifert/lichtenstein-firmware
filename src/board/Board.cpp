@@ -92,9 +92,13 @@ static Board *gBoard = nullptr;
  * Initializes the shared board instance.
  */
 void Board::init() {
+	taskENTER_CRITICAL();
+
 	if(!gBoard) {
 		gBoard = new Board();
 	}
+
+	taskEXIT_CRITICAL();
 }
 
 /**

@@ -36,6 +36,7 @@
 #include "FreeRTOS.h"
 #include "task.h"
 
+#include "sys/System.h"
 #include "board/Board.h"
 #include "clock/Clock.h"
 #include "net/Network.h"
@@ -84,6 +85,7 @@ int main(int argc, char* argv[]) {
 	vPortDefineHeapRegions(xHeapRegions);
 
 	// set up hardware
+	System::init();
 	Board::init();
 	Network::init();
 

@@ -14,62 +14,62 @@
 
 #if HW == HW_MUSTARD
 // level shifter output enable (active low)
-#define LED_OE_PORT					GPIOB
-#define LED_OE_PIN					GPIO_Pin_14
-#define LED_OE_GPIO_CLOCK			RCC_APB2Periph_GPIOB
+#define LED_OE_PORT							GPIOB
+#define LED_OE_PIN							GPIO_Pin_14
+#define LED_OE_GPIO_CLOCK					RCC_APB2Periph_GPIOB
 
-#define LED_OE_ACTIVE_LOW			1
+#define LED_OE_ACTIVE_LOW					1
 
 
 // LED output 0 (SPI2_MOSI)
-#define LED_OUT0_PORT				GPIOB
-#define LED_OUT0_PIN					GPIO_Pin_15
-#define LED_OUT0_GPIO_CLOCK			RCC_APB2Periph_GPIOB
+#define LED_OUT0_PORT						GPIOB
+#define LED_OUT0_PIN							GPIO_Pin_15
+#define LED_OUT0_GPIO_CLOCK					RCC_APB2Periph_GPIOB
 
 // baud rate divisor (SPI[2,3] have 36MHz clock)
-#define LED_OUT0_SPI_RCC_CLOCK		RCC_APB1Periph_SPI2
+#define LED_OUT0_SPI_RCC_CLOCK				RCC_APB1Periph_SPI2
 
-#define LED_OUT0_SPI_BAUD			SPI_BaudRatePrescaler_16
-#define LED_OUT0_SPI					SPI2
-#define LED_OUT0_NEEDS_REMAP			0
-#define LED_OUT0_REMAP				GPIO_Remap_SPI2
+#define LED_OUT0_SPI_BAUD					SPI_BaudRatePrescaler_16
+#define LED_OUT0_SPI							SPI2
+#define LED_OUT0_NEEDS_REMAP					0
+#define LED_OUT0_REMAP						GPIO_Remap_SPI2
 
 // DMA for led output 0
-#define LED_OUT0_DMA_RCC_CLOCK		RCC_AHBPeriph_DMA1
-#define LED_OUT0_DMA_PERIPH			DMA1_Channel5
-#define LED_OUT0_DMA_CHANNEL			DMA_Stream_5
-#define LED_OUT0_DMA_IRQ_PRIORITY	(configMAX_SYSCALL_INTERRUPT_PRIORITY >> 4)
-#define LED_OUT0_DMA_IRQ				DMA1_Channel5_IRQn
-#define LED_OUT0_DMA_COMPLETE_FLAG	DMA1_FLAG_TC5
-#define LED_OUT0_DMA_ISR				DMA1_Channel5_IRQHandler
-#define LED_OUT0_DMA_PERIPH_BASE		((uint32_t) (&(SPI2->DR)))
+#define LED_OUT0_DMA_RCC_CLOCK				RCC_AHBPeriph_DMA1
+#define LED_OUT0_DMA_PERIPH					DMA1_Channel5
+#define LED_OUT0_DMA_CHANNEL					DMA_Stream_5
+#define LED_OUT0_DMA_IRQ_PRIORITY			(configMAX_SYSCALL_INTERRUPT_PRIORITY >> 4)
+#define LED_OUT0_DMA_IRQ						DMA1_Channel5_IRQn
+#define LED_OUT0_DMA_COMPLETE_FLAG			DMA1_FLAG_TC5
+#define LED_OUT0_DMA_ISR						DMA1_Channel5_IRQHandler
+#define LED_OUT0_DMA_PERIPH_BASE				((uint32_t) (&(SPI2->DR)))
 
 
 // LED output 1 (SPI3_MOSI AF)
-#define LED_OUT1_PORT				GPIOC
-#define LED_OUT1_PIN					GPIO_Pin_12
-#define LED_OUT1_GPIO_CLOCK			RCC_APB2Periph_GPIOC
+#define LED_OUT1_PORT						GPIOC
+#define LED_OUT1_PIN							GPIO_Pin_12
+#define LED_OUT1_GPIO_CLOCK					RCC_APB2Periph_GPIOC
 
 // baud rate divisor (SPI[2,3] have 36MHz clock)
-#define LED_OUT1_SPI_RCC_CLOCK		RCC_APB1Periph_SPI3
+#define LED_OUT1_SPI_RCC_CLOCK				RCC_APB1Periph_SPI3
 
-#define LED_OUT1_SPI_BAUD			SPI_BaudRatePrescaler_16
-#define LED_OUT1_SPI					SPI3
-#define LED_OUT1_NEEDS_REMAP			1
-#define LED_OUT1_REMAP				GPIO_Remap_SPI3
+#define LED_OUT1_SPI_BAUD					SPI_BaudRatePrescaler_16
+#define LED_OUT1_SPI							SPI3
+#define LED_OUT1_NEEDS_REMAP					1
+#define LED_OUT1_REMAP						GPIO_Remap_SPI3
 
 // DMA for led output 1
-#define LED_OUT1_DMA_RCC_CLOCK		RCC_AHBPeriph_DMA2
-#define LED_OUT1_DMA_PERIPH			DMA2_Channel2
-#define LED_OUT1_DMA_CHANNEL			DMA_Stream_2
-#define LED_OUT1_DMA_IRQ_PRIORITY	(configMAX_SYSCALL_INTERRUPT_PRIORITY >> 4)
-#define LED_OUT1_DMA_IRQ				DMA2_Channel2_IRQn
-#define LED_OUT1_DMA_COMPLETE_FLAG	DMA2_FLAG_TC2
-#define LED_OUT1_DMA_ISR				DMA2_Channel2_IRQHandler
-#define LED_OUT1_DMA_PERIPH_BASE		((uint32_t) (&(SPI3->DR)))
+#define LED_OUT1_DMA_RCC_CLOCK				RCC_AHBPeriph_DMA2
+#define LED_OUT1_DMA_PERIPH					DMA2_Channel2
+#define LED_OUT1_DMA_CHANNEL					DMA_Stream_2
+#define LED_OUT1_DMA_IRQ_PRIORITY			(configMAX_SYSCALL_INTERRUPT_PRIORITY >> 4)
+#define LED_OUT1_DMA_IRQ						DMA2_Channel2_IRQn
+#define LED_OUT1_DMA_COMPLETE_FLAG			DMA2_FLAG_TC2
+#define LED_OUT1_DMA_ISR						DMA2_Channel2_IRQHandler
+#define LED_OUT1_DMA_PERIPH_BASE				((uint32_t) (&(SPI3->DR)))
 
 // when set, use DMA to transfer pixel data to LEDs.
-#define USE_DMA						0
+#define USE_DMA								1
 
 #endif
 
@@ -81,9 +81,13 @@ using namespace ledout;
  * Allocates the shared output handler.
  */
 void Output::init(void) {
+	taskENTER_CRITICAL();
+
 	if(!gOutput) {
 		gOutput = new Output();
 	}
+
+	taskEXIT_CRITICAL();
 }
 
 /**
@@ -108,6 +112,9 @@ Output::Output() {
 	this->task = new OutputTask();
 }
 
+/**
+ * Deletes the task, which will stop it.
+ */
 Output::~Output() {
 	delete this->task;
 }
@@ -184,11 +191,27 @@ void Output::initOutputGPIOs(void) {
 
 	SPI_Init(LED_OUT1_SPI, &spi);
 	SPI_Cmd(LED_OUT1_SPI, ENABLE);
+}
 
+/**
+ * Initializes the DMA engine for the output SPI drivers.
+ */
+void Output::initOutputDMA(void) {
+	SemaphoreHandle_t handle;
+
+	// allocate semaphores
+	for(int i = 0; i < Output::NumOutputChannels; i++) {
+		handle = xSemaphoreCreateBinary();
+		this->dmaSemaphores[i] = handle;
+
+		// give the semaphore so the DMA routine can take it
+		xSemaphoreGive(handle);
+	}
 
 	// enable clocks for the DMA
 	RCC_AHBPeriphClockCmd(LED_OUT0_DMA_RCC_CLOCK, ENABLE);
 	RCC_AHBPeriphClockCmd(LED_OUT1_DMA_RCC_CLOCK, ENABLE);
+
 
 	// enable the DMA interrupt to pass through the NVIC
 	NVIC_InitTypeDef nvic;
@@ -206,22 +229,6 @@ void Output::initOutputGPIOs(void) {
 	nvic.NVIC_IRQChannelPreemptionPriority = LED_OUT1_DMA_IRQ_PRIORITY;
 
 	NVIC_Init(&nvic);
-}
-
-/**
- * Initializes the DMA engine for the output SPI drivers.
- */
-void Output::initOutputDMA(void) {
-	SemaphoreHandle_t handle;
-
-	// allocate semaphores
-	for(int i = 0; i < Output::NumOutputChannels; i++) {
-		handle = xSemaphoreCreateBinary();
-		this->dmaSemaphores[i] = handle;
-
-		// give the semaphore so the DMA routine can take it
-		xSemaphoreGive(handle);
-	}
 }
 
 /**
@@ -268,12 +275,14 @@ int Output::outputData(int channel, void *data, size_t length) {
 #if USE_DMA
 	// typedefs for DMA
 	DMA_InitTypeDef dma;
+	DMA_StructInit(&dma);
+
 	DMA_Channel_TypeDef *dmaChannel;
 
 	// if a DMA is in progress, wait for it to complete
-	trace_printf("channel %u, output %u bytes from 0x%x; waiting for lock\n", channel, length, data);
+//	trace_printf("channel %u, output %u bytes from 0x%x; waiting for lock\n", channel, length, data);
 	xSemaphoreTake(this->dmaSemaphores[channel], portMAX_DELAY);
-	trace_printf("got lock!\n");
+//	trace_printf("got lock!\n");
 
 	// now that we have the semaphore, enter a critical section
 	taskENTER_CRITICAL();
@@ -315,7 +324,9 @@ int Output::outputData(int channel, void *data, size_t length) {
 	DMA_Init(dmaChannel, &dma);
 	DMA_Cmd(dmaChannel, ENABLE);
 
-	// send the DMA request
+	DMA_ITConfig(dmaChannel, DMA_IT_TC, ENABLE);
+
+	// send the DMA request to the SPI
 	SPI_I2S_DMACmd(spi, SPI_I2S_DMAReq_Tx, ENABLE);
 
 	// exit critical section

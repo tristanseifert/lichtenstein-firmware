@@ -9,13 +9,32 @@
 #include "../board/Board.h"
 #include "../clock/Clock.h"
 
+#include "FreeRTOSConfig.h"
+#include "FreeRTOS.h"
+#include "list.h"
+#include "FreeRTOS_IP.h"
+
 #include "cmsis_device.h"
-#include "diag/Trace.h"
+
+#include <cstring>
 
 // hardware config for EEPROM
 #if HW == HW_MUSTARD
 
 #endif
+
+
+/// default IP address, if DHCP fails
+static const uint8_t ucIPAddress[ 4 ] = { 192, 168, 1, 200 };
+/// default netmask, if DHCP fails
+static const uint8_t ucNetMask[ 4 ] = { 255, 255, 255, 0 };
+/// default router address, if DHCP fails
+static const uint8_t ucGatewayAddress[ 4 ] = { 192, 168, 1, 1 };
+/// default DNS server address
+static const uint8_t ucDNSServerAddress[ 4 ] = { 208, 67, 222, 222 };
+
+/// MAC Address, we need to store this again here
+uint8_t ucMACAddress[6];
 
 static Network *gNetwork = nullptr;
 
@@ -47,6 +66,7 @@ Network::Network() {
 	this->setUpPHY();
 
 	// set up the stack
+	this->setUpStack();
 
 	// when the stack is set up, start network services
 	this->startNetServices();
@@ -92,6 +112,9 @@ void Network::probeEthParamEEPROM(void) {
 	Board *b = Board::sharedInstance();
 	b->configEEPROMRead(&this->macAddress, Network::ethParamMACOffset, 6);
 
+	// copy MAC address
+	memcpy(ucMACAddress, this->macAddress, 6);
+
 	// debug
 	trace_printf("MAC address: %02x:%02x:%02x:%02x:%02x:%02x\n",
 				 this->macAddress[0], this->macAddress[1],
@@ -100,12 +123,63 @@ void Network::probeEthParamEEPROM(void) {
 }
 
 /**
- * Sets up the Ethernet MAC internal to the chip, sets up the MAC filtering
- * and UDP/ICMP/TCP checksum offloading and configures the DMA engine and
- * various interrupts.
+ * Sets up the clocks for the Ethernet MAC and the various GPIOs used for the
+ * RMII interface.
  */
 void Network::setUpMAC(void) {
+	GPIO_InitTypeDef gpio;
 
+	// enable clock for the  DMA engines
+	RCC_AHBPeriphClockCmd(RCC_AHBPeriph_DMA1 | RCC_AHBPeriph_DMA1, ENABLE);
+
+	// enable clocks for the ETH peripherals
+	RCC_AHBPeriphClockCmd(RCC_AHBPeriph_ETH_MAC, ENABLE);
+	RCC_AHBPeriphClockCmd(RCC_AHBPeriph_ETH_MAC_Tx | RCC_AHBPeriph_ETH_MAC_Rx, ENABLE);
+
+	// enable clocks for the GPIOs
+	RCC_APB2PeriphClockCmd(RCC_APB2Periph_GPIOA | RCC_APB2Periph_GPIOB | RCC_APB2Periph_GPIOC |
+				 RCC_APB2Periph_GPIOD | RCC_APB2Periph_GPIOE, ENABLE);
+	RCC_APB2PeriphClockCmd(RCC_APB2Periph_AFIO, ENABLE);
+
+	// all pins below are 50MHz, AF-PP
+	gpio.GPIO_Speed = GPIO_Speed_50MHz;
+	gpio.GPIO_Mode = GPIO_Mode_AF_PP;
+
+	// RMII_REF_CLK (PA1)
+	gpio.GPIO_Pin = GPIO_Pin_1;
+	GPIO_Init(GPIOA, &gpio);
+
+	// RMII_MDIO (PA2)
+	gpio.GPIO_Pin = GPIO_Pin_2;
+	GPIO_Init(GPIOA, &gpio);
+
+	// MCO (PA8)
+	gpio.GPIO_Pin = GPIO_Pin_8;
+	GPIO_Init(GPIOA, &gpio);
+
+	// RMII_TX_EN (PB11)
+	gpio.GPIO_Pin = GPIO_Pin_11;
+	GPIO_Init(GPIOB, &gpio);
+
+	// RMII_TXD[0,1] (PB12, PB13)
+	gpio.GPIO_Pin = GPIO_Pin_12 | GPIO_Pin_13;
+	GPIO_Init(GPIOB, &gpio);
+
+	// RMII_MDC (PC1)
+	gpio.GPIO_Pin = GPIO_Pin_1;
+	GPIO_Init(GPIOC, &gpio);
+
+	// RMII_RXD[0,1] (PD9, PD10) remap
+	GPIO_PinRemapConfig(GPIO_Remap_ETH, ENABLE);
+
+	gpio.GPIO_Pin = GPIO_Pin_9 | GPIO_Pin_10;
+	GPIO_Init(GPIOD, &gpio);
+
+	// RMII_CRS_DV (PD8) remap
+	GPIO_PinRemapConfig(GPIO_Remap_ETH, ENABLE);
+
+	gpio.GPIO_Pin = GPIO_Pin_8;
+	GPIO_Init(GPIOD, &gpio);
 }
 
 /**
@@ -113,4 +187,35 @@ void Network::setUpMAC(void) {
  */
 void Network::setUpPHY(void) {
 
+}
+
+
+/**
+ * Sets up the TCP/IP stack.
+ */
+void Network::setUpStack(void) {
+	// initialize IP stack
+//	FreeRTOS_IPInit(ucIPAddress, ucNetMask, ucGatewayAddress, ucDNSServerAddress, this->macAddress);
+}
+
+
+/**
+ * Generates a random number.
+ */
+extern "C" UBaseType_t uxRand() {
+	static UBaseType_t g_seed = 0xDEADBEEF;
+
+	g_seed = (214013*g_seed+2531011);
+	return (g_seed>>16)&0x7FFF;
+}
+
+/**
+ * Network event hook
+ */
+extern "C" void vApplicationIPNetworkEventHook(eIPCallbackEvent_t event) {
+	if(event == eNetworkUp) {
+		trace_printf("NETWORK: link up");
+	} else if(event == eNetworkDown) {
+		trace_printf("NETWORK: link down");
+	}
 }

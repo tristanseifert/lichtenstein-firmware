@@ -27,6 +27,8 @@ class Network {
 		void setUpMAC(void);
 		void setUpPHY(void);
 
+		void setUpStack();
+
 	private:
 		static const uint8_t ethParamMACOffset = 0xFA;
 

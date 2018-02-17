@@ -6,6 +6,9 @@
  */
 #include "Clock.h"
 
+#include "FreeRTOSConfig.h"
+#include "FreeRTOS.h"
+#include "task.h"
 #include "cmsis_device.h"
 
 static Clock *gClock = nullptr;
@@ -14,9 +17,13 @@ static Clock *gClock = nullptr;
  * Allocates the shared clock.
  */
 void Clock::init(void) {
+	taskENTER_CRITICAL();
+
 	if(!gClock) {
 		gClock = new Clock();
 	}
+
+	taskEXIT_CRITICAL();
 }
 
 /**

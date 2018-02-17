@@ -92,13 +92,22 @@
 #define configTICK_RATE_HZ				((TickType_t) 100)
 #define configMAX_PRIORITIES				(5)
 #define configMINIMAL_STACK_SIZE			((unsigned short) 100)
-
-// size of the heap
-#define configTOTAL_HEAP_SIZE			((size_t) (24 * 1024))
 #define configMAX_TASK_NAME_LEN			(16)
 #define configUSE_TRACE_FACILITY			1
 #define configUSE_16_BIT_TICKS			0
 #define configIDLE_SHOULD_YIELD			0
+
+// timers
+#define configUSE_TIMERS					1
+#define configTIMER_TASK_PRIORITY		(configMAX_PRIORITIES - 2)
+#define configTIMER_QUEUE_LENGTH			4
+#define configTIMER_TASK_STACK_DEPTH		(configMINIMAL_STACK_SIZE * 1)
+
+// the kernel will keep track of time each task has been running
+#define configGENERATE_RUN_TIME_STATS	0
+#define configUSE_TRACE_FACILITY			1
+
+#define INCLUDE_xTaskGetIdleTaskHandle	1
 
 // disallow static allocation
 #define configSUPPORT_STATIC_ALLOCATION	0
@@ -112,7 +121,6 @@
 #define configCHECK_FOR_STACK_OVERFLOW	0
 #define configUSE_RECURSIVE_MUTEXES		1
 #define configQUEUE_REGISTRY_SIZE		0
-#define configGENERATE_RUN_TIME_STATS	0
 
 /* Set the following definitions to 1 to include the API function, or zero
 to exclude the API function. */
@@ -141,6 +149,18 @@ configKERNEL_INTERRUPT_PRIORITY setting.  Here 15 corresponds to the lowest
 NVIC value of 255. */
 #define configLIBRARY_KERNEL_INTERRUPT_PRIORITY	15
 
+/**
+ * Call into the CPU profiler when a task is switched out.
+ */
+extern void _CPULoadProfilerTaskSwitchedIn();
+#define traceTASK_SWITCHED_IN() _CPULoadProfilerTaskSwitchedIn()
+
+/*// do nothing: the System class initializes this already
+#define portCONFIGURE_TIMER_FOR_RUN_TIME_STATS() {}
+
+// call into the CPULoadProfiler
+extern unsigned int _CPULoadProfilerGetTimerValue();
+#define portGET_RUN_TIME_COUNTER_VALUE() _CPULoadProfilerGetTimerValue()*/
 
 #endif /* FREERTOS_CONFIG_H */
 

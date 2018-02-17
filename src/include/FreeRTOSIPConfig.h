@@ -39,6 +39,15 @@
 #ifndef FREERTOS_IP_CONFIG_H
 #define FREERTOS_IP_CONFIG_H
 
+// use RMII
+#define ipconfigUSE_RMII 1
+
+// use zero-copy DMA for transmit buffers
+#define ipconfigZERO_COPY_TX_DRIVER 1
+
+// add network event hook
+#define ipconfigUSE_NETWORK_EVENT_HOOK 1
+
 /* Set to 1 to print out debug messages.  If ipconfigHAS_DEBUG_PRINTF is set to
 1 then FreeRTOS_debug_printf should be defined to the function used to print
 out the debugging messages. */
@@ -60,10 +69,10 @@ messages. */
 on).  Valid options are pdFREERTOS_BIG_ENDIAN and pdFREERTOS_LITTLE_ENDIAN. */
 #define ipconfigBYTE_ORDER pdFREERTOS_LITTLE_ENDIAN
 
-/* If the network card/driver includes checksum offloading (IP/TCP/UDP checksums)
-then set ipconfigDRIVER_INCLUDED_RX_IP_CHECKSUM to 1 to prevent the software
-stack repeating the checksum calculations. */
+// the network does IP/TCP/UDP checksum calculating for rx
 #define ipconfigDRIVER_INCLUDED_RX_IP_CHECKSUM   1
+// the network driver does IP/TCP/UDP checksum calculating for rx
+#define ipconfigDRIVER_INCLUDED_TX_IP_CHECKSUM	1
 
 /* Several API's will block until the result is known, or the action has been
 performed, for example FreeRTOS_send() and FreeRTOS_recv().  The timeouts can be
@@ -194,7 +203,7 @@ not set to 1 then only FreeRTOS_indet_addr_quick() is available. */
 are available to the IP stack.  The total number of network buffers is limited
 to ensure the total amount of RAM that can be consumed by the IP stack is capped
 to a pre-determinable value. */
-#define ipconfigNUM_NETWORK_BUFFER_DESCRIPTORS		60
+#define ipconfigNUM_NETWORK_BUFFER_DESCRIPTORS		20
 
 /* A FreeRTOS queue is used to send events from application tasks to the IP
 stack.  ipconfigEVENT_QUEUE_LENGTH sets the maximum number of events that can
@@ -264,10 +273,6 @@ Ethernet driver does all the necessary filtering in hardware then software
 filtering can be removed by using a value other than 1 or 0. */
 #define ipconfigETHERNET_DRIVER_FILTERS_FRAME_TYPES	1
 
-/* The windows simulator cannot really simulate MAC interrupts, and needs to
-block occasionally to allow other tasks to run. */
-#define configWINDOWS_MAC_INTERRUPT_SIMULATOR_DELAY ( 20 / portTICK_PERIOD_MS )
-
 /* Advanced only: in order to access 32-bit fields in the IP packets with
 32-bit memory instructions, all packets will be stored 32-bit-aligned, plus 16-bits.
 This has to do with the contents of the IP-packets: all 32-bit fields are
@@ -278,7 +283,7 @@ This has to do with the contents of the IP-packets: all 32-bit fields are
 TCP socket will use up to 2 x 6 descriptors, meaning that it can have 2 x 6
 outstanding packets (for Rx and Tx).  When using up to 10 TP sockets
 simultaneously, one could define TCP_WIN_SEG_COUNT as 120. */
-#define ipconfigTCP_WIN_SEG_COUNT		240
+#define ipconfigTCP_WIN_SEG_COUNT		120
 
 /* Each TCP socket has a circular buffers for Rx and Tx, which have a fixed
 maximum size.  Define the size of Rx buffer for TCP sockets. */
@@ -294,7 +299,7 @@ real program memory (RAM or flash) or just has a random non-zero value. */
 /* Include support for TCP hang protection.  All sockets in a connecting or
 disconnecting stage will timeout after a period of non-activity. */
 #define ipconfigTCP_HANG_PROTECTION			( 1 )
-#define ipconfigTCP_HANG_PROTECTION_TIME	( 30 )
+#define ipconfigTCP_HANG_PROTECTION_TIME		( 30 )
 
 /* Include support for TCP keep-alive messages. */
 #define ipconfigTCP_KEEP_ALIVE				( 1 )
