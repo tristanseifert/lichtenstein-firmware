@@ -9,12 +9,14 @@
  *  Created on: Feb 13, 2018
  *      Author: tristan
  */
+#define LOG_MODULE "OUT"
+
 #include "OutputTask.h"
 #include "Output.h"
 
 #include "OutputBitPatternLUT.h"
 
-#include <Errors.h>
+#include "LichtensteinApp.h"
 
 #include <cstring>
 
@@ -57,7 +59,7 @@ OutputTask::OutputTask() {
 					 this, LEDOUT_TASK_PRIORITY, &this->handle);
 
 	if(ok != pdPASS) {
-		trace_puts("Couldn't create LEDOut task!");
+		LOG(S_ERROR, "Couldn't create LEDOut task!");
 	}
 
 	// allocate buffers
@@ -90,7 +92,7 @@ void OutputTask::allocBuffers(void) {
 		this->rgbwBuffer[i] = (rgbw_pixel_t *) pvPortMalloc(pixelBufSz);
 		this->outputBuffer[i] = (uint8_t *) pvPortMalloc(outputBufSz);
 
-		trace_printf("allocated buffer %d: rgb = 0x%x, size %u, output = 0x%x, size %u\n",
+		LOG(S_DEBUG, "allocated buffer %d: rgb = 0x%x, size %u, output = 0x%x, size %u",
 					 i, this->rgbwBuffer[i], (ledsPerChannel * bytesPerPixel),
 					 this->outputBuffer[i], outputBufSz);
 
@@ -150,9 +152,6 @@ void OutputTask::taskEntry(void) noexcept {
 void OutputTask::convertBuffer(int buffer) {
 	uint8_t *buf = (this->outputBuffer[buffer] + 1); // first byte is zero
 	uint8_t *read = reinterpret_cast<uint8_t *>(this->rgbwBuffer[buffer]);
-//	uint32_t *bitBand = ADDR_BITBAND(buf, 0);
-
-//	trace_printf("BitBand for bit 0 of 0x%x: 0x%x\n", buf, bitBand);
 
 	// read each LED
 	for(int i = 0; i < ledsPerChannel; i++) {
@@ -162,8 +161,8 @@ void OutputTask::convertBuffer(int buffer) {
 			uint32_t patternData = bitPatternLut[byte];
 			uint8_t *pattern = reinterpret_cast<uint8_t *>(&patternData);
 
-//			trace_printf("Read byte 0x%02x, pattern 0x%06x\n", byte, patternData);
-//			trace_printf("\t %02x %02x %02x\n", pattern[2], pattern[1], pattern[0]);
+//			LOG(S_DEBUG, "Read byte 0x%02x, pattern 0x%06x", byte, patternData);
+//			LOG(S_DEBUG, "\t %02x %02x %02x", pattern[2], pattern[1], pattern[0]);
 
 			// copy the bytes in REVERSE order because ARM is little endian
 			*buf++ = pattern[2];

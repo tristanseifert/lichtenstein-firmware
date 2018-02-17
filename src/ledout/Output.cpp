@@ -4,6 +4,8 @@
  *  Created on: Feb 13, 2018
  *      Author: tristan
  */
+#define LOG_MODULE "OUT"
+
 #include "Output.h"
 
 #include "cmsis_device.h"

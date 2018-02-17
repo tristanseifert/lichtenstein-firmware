@@ -4,17 +4,16 @@
  *  Created on: Feb 13, 2018
  *      Author: tristan
  */
+#define LOG_MODULE "NET"
+
 #include "Network.h"
 
 #include "../board/Board.h"
 #include "../clock/Clock.h"
 
-#include "FreeRTOSConfig.h"
-#include "FreeRTOS.h"
-#include "list.h"
-#include "FreeRTOS_IP.h"
+#include "LichtensteinApp.h"
 
-#include "cmsis_device.h"
+#include "FreeRTOS_IP.h"
 
 #include <cstring>
 
@@ -116,7 +115,7 @@ void Network::probeEthParamEEPROM(void) {
 	memcpy(ucMACAddress, this->macAddress, 6);
 
 	// debug
-	trace_printf("MAC address: %02x:%02x:%02x:%02x:%02x:%02x\n",
+	LOG(S_INFO, "MAC address: %02x:%02x:%02x:%02x:%02x:%02x",
 				 this->macAddress[0], this->macAddress[1],
 				 this->macAddress[2], this->macAddress[3],
 				 this->macAddress[4], this->macAddress[5]);
@@ -214,8 +213,8 @@ extern "C" UBaseType_t uxRand() {
  */
 extern "C" void vApplicationIPNetworkEventHook(eIPCallbackEvent_t event) {
 	if(event == eNetworkUp) {
-		trace_printf("NETWORK: link up");
+		LOG(S_INFO, "link up");
 	} else if(event == eNetworkDown) {
-		trace_printf("NETWORK: link down");
+		LOG(S_INFO, "link down");
 	}
 }

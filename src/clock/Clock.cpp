@@ -4,6 +4,8 @@
  *  Created on: Feb 13, 2018
  *      Author: tristan
  */
+#define LOG_MODULE "CLK"
+
 #include "Clock.h"
 
 #include "FreeRTOSConfig.h"

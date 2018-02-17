@@ -31,10 +31,7 @@
 #include <stdlib.h>
 #include "diag/Trace.h"
 
-#include "cmsis_device.h"
-
-#include "FreeRTOS.h"
-#include "task.h"
+#include "LichtensteinApp.h"
 
 #include "sys/System.h"
 #include "board/Board.h"
@@ -47,7 +44,7 @@
  * Stack overflow handler
  */
 void vApplicationStackOverflowHook(TaskHandle_t xTask, signed char *pcTaskName) {
-	trace_printf("Stack overflow in task %s!", pcTaskName);
+	LOG(S_FATAL, "Stack overflow in task %s!", pcTaskName);
 
 	while(1);
 }
@@ -76,13 +73,10 @@ int main(int argc, char* argv[]) {
 	// set the priority levels in the NVIC (required for FreeRTOS)
 	NVIC_PriorityGroupConfig(NVIC_PriorityGroup_4);
 
-	// initialize debug SWO output
-	trace_initialize();
-	trace_printf("lichtenstein %s\nSystemCoreClock = %uHz, %u bytes of RAM\n", GIT_REV, SystemCoreClock, __ram_size__);
-
-	// set up FreeRTOS heap
-	trace_printf("Allocating heap region at 0x%x sized %u bytes\n", xHeapRegions[0].pucStartAddress, xHeapRegions[0].xSizeInBytes);
+	// set up the heap
 	vPortDefineHeapRegions(xHeapRegions);
+	LOG(S_INFO, "Allocating heap region at 0x%x sized %u bytes", xHeapRegions[0].pucStartAddress, xHeapRegions[0].xSizeInBytes);
+	LOG(S_INFO, "lichtenstein %s (SystemCoreClock = %uHz, %u bytes of RAM)", GIT_REV, SystemCoreClock, __ram_size__);
 
 	// set up hardware
 	Board::init();
@@ -95,7 +89,7 @@ int main(int argc, char* argv[]) {
 	Output::init();
 
 	// some debugging to diagnose memory usage
-	trace_printf("heap usage: %u bytes free, %u bytes total\n",
+	LOG(S_DEBUG, "heap usage: %u bytes free, %u bytes total",
 				 xPortGetFreeHeapSize(), _Heap_Size);
 
 	// start scheduler (this should never return!)

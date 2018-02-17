@@ -4,14 +4,11 @@
  *  Created on: Feb 13, 2018
  *      Author: tristan
  */
+#define LOG_MODULE "BRD"
+
 #include "Board.h"
 
-#include "FreeRTOSConfig.h"
-#include "FreeRTOS.h"
-#include "task.h"
-#include "semphr.h"
-
-#include "cmsis_device.h"
+#include "LichtensteinApp.h"
 
 #include <cstring>
 
@@ -349,18 +346,18 @@ void Board::initConfigEEPROM(void) {
     uint8_t checksum = Board::calculateConfigChecksum(&this->config);
 
     if(checksum != this->config.checksum) {
-    		trace_printf("ERROR: mismatch in config checksum; computed 0x%02x, got 0x%02x\n", checksum, this->config.checksum);
+    		LOG(S_ERROR, "mismatch in config checksum; computed 0x%02x, got 0x%02x", checksum, this->config.checksum);
     }
 
     if(this->config.version != BOARD_CONFIG_VERSION) {
-			trace_printf("ERROR: invalid config version %u\n", this->config.version);
+    		LOG(S_ERROR, "invalid config version %u", this->config.version);
 	}
 
     if(this->config.magic != BOARD_CONFIG_MAGIC) {
-		trace_printf("ERROR: invalid magic %u\n", this->config.magic);
+    		LOG(S_ERROR, "invalid magic %u", this->config.magic);
 	}
 
-    trace_printf("running on hw 0x%02x, version 0x%02x.%02x\n",
+    LOG(S_INFO, "running on hw 0x%02x, version 0x%02x.%02x",
     				this->config.hwModel, this->config.hwVersion,
 				this->config.hwRevision);
 }
@@ -429,7 +426,7 @@ int Board::i2cStart(uint8_t address, bool read, int timeout) {
 		}
 	}
 
-//	trace_printf("Acknowledged in %u tries\n", 50000 - timeout);
+//	LOG(S_DEBUG, "Acknowledged in %u tries", 50000 - timeout);
 
 	// send slave address
 	I2C_Send7bitAddress(CFG_EEPROM_I2C, (uint8_t) (address <<  1), direction);
@@ -502,7 +499,7 @@ uint8_t Board::i2cReadByte(bool ack, int timeout) {
 	// wait to receive a byte
 	while(!I2C_CheckEvent(CFG_EEPROM_I2C, I2C_EVENT_MASTER_BYTE_RECEIVED)) {
 		if(counter-- == 0) {
-			trace_printf("READ ERROR: timeout reading byte\n");
+			LOG(S_ERROR, "READ ERROR: timeout reading byte");
 			return 0;
 		}
 	}
@@ -516,7 +513,7 @@ uint8_t Board::i2cReadByte(bool ack, int timeout) {
  * Writes a MAC address to the EEPROM.
  */
 void Board::_testWriteBoardConfig(void) {
-	trace_puts("WRITING BOARD CONFIG TO EEPROM!");
+	LOG(S_WARN, "WRITING BOARD CONFIG TO EEPROM!");
 
 	this->config.hwModel = HW;
 	this->config.hwRevision = 0x00;
@@ -548,7 +545,7 @@ void Board::configEEPROMRead(void *buf, uint8_t address, uint8_t numBytes) {
 
 	// send the address
 	if(this->i2cStart(Board::configEEPROMI2CAddress, false) == 1) {
-		trace_puts("Timeout starting I2C transaction for address write!\n");
+		trace_puts("Timeout starting I2C transaction for address write!");
 
 		// return mutex
 		xSemaphoreGive(this->i2cMutex);
@@ -565,7 +562,7 @@ void Board::configEEPROMRead(void *buf, uint8_t address, uint8_t numBytes) {
 
 	// read the number of bytes the user wants
 	if(this->i2cStart(Board::configEEPROMI2CAddress, true) == 1) {
-		trace_puts("Timeout starting I2C transaction for data read!\n");
+		trace_puts("Timeout starting I2C transaction for data read!");
 
 		// return mutex
 		xSemaphoreGive(this->i2cMutex);
@@ -610,7 +607,7 @@ void Board::configEEPROMWrite(void *buf, uint8_t address, uint8_t numBytes) {
 	taskENTER_CRITICAL();
 
 #if DEBUG_I2C_WRITES
-	trace_printf("** starting write to 0x%02x, size 0x%02x\n", address, numBytes);
+	LOG(S_DEBUG, "** starting write to 0x%02x, size 0x%02x", address, numBytes);
 #endif
 
 	// write the first page
@@ -626,11 +623,11 @@ void Board::configEEPROMWrite(void *buf, uint8_t address, uint8_t numBytes) {
 
 	// send address
 #if DEBUG_I2C_WRITES
-	trace_printf("\tfirst page is 0x%02x, writing to offset 0x%02x, address 0x%02x, (%u bytes)\n\t", firstPage, offsetIntoPage, writeAddress, bytesToWrite);
+	LOG(S_DEBUG, "first page is 0x%02x, writing to offset 0x%02x, address 0x%02x, (%u bytes)", firstPage, offsetIntoPage, writeAddress, bytesToWrite);
 #endif
 
 	if(this->i2cStart(Board::configEEPROMI2CAddress, false, Board::configEEPROMWriteTimeout) == 1) {
-		trace_puts("Timeout starting I2C transmission for write\n");
+		LOG(S_ERROR, "Timeout starting I2C transmission for write");
 
 		// return mutex
 		xSemaphoreGive(this->i2cMutex);
@@ -648,13 +645,13 @@ void Board::configEEPROMWrite(void *buf, uint8_t address, uint8_t numBytes) {
 		this->i2cWriteByte(*ptr++);
 
 #if DEBUG_I2C_WRITES
-		trace_printf("#");
+		LOG(S_DEBUG, "#");
 #endif
 		bytesWritten++; writeAddress++;
 	}
 
 #if DEBUG_I2C_WRITES
-	trace_printf("\n\tsending stop condition\n");
+	LOG(S_DEBUG, "sending stop condition");
 #endif
 
 	// have we got any more bytes to write?
@@ -662,18 +659,18 @@ void Board::configEEPROMWrite(void *buf, uint8_t address, uint8_t numBytes) {
 		int bytesLeftToWrite = numBytes - bytesWritten;
 
 #if DEBUG_I2C_WRITES
-		trace_printf("\tremaining bytes to write: %u, starting at 0x%02x\n", bytesLeftToWrite, writeAddress);
+		LOG(S_DEBUG, "remaining bytes to write: %u, starting at 0x%02x", bytesLeftToWrite, writeAddress);
 #endif
 
 		for(int i = 0, j = bytesLeftToWrite; i < j; i++) {
 			if((writeAddress & Board::configEEPROMPageSizeMask) == 0) {
 #if DEBUG_I2C_WRITES
-				trace_printf("\tstarting page write at 0x%02x for %u bytes\n\t", writeAddress, bytesLeftToWrite & Board::configEEPROMPageSizeMask);
+				LOG(S_DEBUG, "starting page write at 0x%02x for %u bytes", writeAddress, bytesLeftToWrite & Board::configEEPROMPageSizeMask);
 #endif
 
 				// send address
 				if(this->i2cStart(Board::configEEPROMI2CAddress, false, Board::configEEPROMWriteTimeout) == 1) {
-					trace_puts("Timeout starting I2C transmission for write\n");
+					LOG(S_ERROR, "Timeout starting I2C transmission for write");
 
 					// return mutex
 					xSemaphoreGive(this->i2cMutex);
@@ -691,14 +688,14 @@ void Board::configEEPROMWrite(void *buf, uint8_t address, uint8_t numBytes) {
 			this->i2cWriteByte(*ptr++);
 
 #if DEBUG_I2C_WRITES
-			trace_printf("*");
+			LOG(S_DEBUG, "*");
 #endif
 			bytesWritten++; writeAddress++;
 
 			// have we reached the end of the page?
 			if((writeAddress & Board::configEEPROMPageSizeMask) == 0) {
 #if DEBUG_I2C_WRITES
-				trace_printf("\n\tsending stop condition after writing %u bytes, have %u bytes left\n", Board::configEEPROMPageSize, numBytes - bytesWritten);
+				LOG(S_DEBUG, "sending stop condition after writing %u bytes, have %u bytes left", Board::configEEPROMPageSize, numBytes - bytesWritten);
 #endif
 
 				if((numBytes - bytesWritten) != 0) {
@@ -709,14 +706,14 @@ void Board::configEEPROMWrite(void *buf, uint8_t address, uint8_t numBytes) {
 
 		// send a stop condition again in case we haven't already
 #if DEBUG_I2C_WRITES
-		trace_printf("\n\tsending stop condition\n");
+		LOG(S_DEBUG, "sending stop condition");
 #endif
 
 		this->i2cStop();
 	}
 
 #if DEBUG_I2C_WRITES
-	trace_printf("done writing\n");
+	LOG(S_DEBUG, "done writing");
 #endif
 
 	// return mutex and exit critical section
@@ -736,7 +733,7 @@ uint8_t Board::calculateConfigChecksum(board_config_t *cfg) {
 	int size = sizeof(board_config_t);
 	int positionOfChecksumFromEnd = size - offsetof(board_config_t, checksum);
 
-//	trace_printf("Size of board_config_t: %u, checksum at byte %u from end\n", size, positionOfChecksumFromEnd);
+//	LOG(S_DEBUG, "Size of board_config_t: %u, checksum at byte %u from end", size, positionOfChecksumFromEnd);
 
 	// calculate the checksum over the size
 	uint8_t accumulator = 0;
@@ -747,7 +744,7 @@ uint8_t Board::calculateConfigChecksum(board_config_t *cfg) {
 
 	accumulator = ~accumulator;
 
-//	trace_printf("Calculated checksum 0x%02x for 0x%x\n", accumulator, cfg);
+//	LOG(S_DEBUG, "Calculated checksum 0x%02x for 0x%x", accumulator, cfg);
 	return accumulator;
 }
 

@@ -8,15 +8,11 @@
  *  Created on: Feb 17, 2018
  *      Author: tristan
  */
+#define LOG_MODULE "FS"
 
 #include "Filesystem.h"
 
-#include "FreeRTOSConfig.h"
-#include "FreeRTOS.h"
-#include "task.h"
-#include "semphr.h"
-
-#include "cmsis_device.h"
+#include "LichtensteinApp.h"
 
 #include "FlashCommands.h"
 
@@ -277,11 +273,11 @@ void Filesystem::setUpTask(void) {
  */
 void Filesystem::taskEntry(void) {
 	// initialize the filesystem here
-	this->spiffsMount();
+//	this->spiffsMount();
 
 	// message loop
 	while(1) {
-
+		vTaskDelay(1000);
 	}
 
 	// tear down the filesystem
@@ -314,7 +310,7 @@ void Filesystem::spiffsMount(void) {
 	// try and mount it
 	ret = SPIFFS_mount(&this->fs, &cfg, this->fsWorkBuf, this->fsFileDescriptors,
 					   FS_FDBUF_SIZE, this->fsCache, FS_CACHE_BUF_SIZE, 0);
-	trace_printf("spiffs mount: %u\n", ret);
+	LOG(S_DEBUG, "spiffs mount: %u", ret);
 }
 
 
@@ -554,7 +550,7 @@ void Filesystem::flashWaitSectorErase(void) {
 int Filesystem::flashRead(uint32_t address, size_t size, void *dst) {
 	int err;
 
-	trace_printf("Reading %u bytes from 0x%06x, buffer at 0x%x\n", size, address, dst);
+	LOG(S_DEBUG, "Reading %u bytes from 0x%06x, buffer at 0x%x", size, address, dst);
 
 	// DMA can do a maximum of 64K so limit to that
 	if(size >= 0xFFFF) {
@@ -574,7 +570,7 @@ int Filesystem::flashRead(uint32_t address, size_t size, void *dst) {
 		// end transaction
 		this->endFlashTransaction();
 
-		trace_printf("Couldn't send read command with address 0x%06x\n", address);
+		LOG(S_ERROR, "Couldn't send read command with address 0x%06x", address);
 
 		return err;
 	}
@@ -615,7 +611,7 @@ s32_t _spiffs_read(u32_t addr, u32_t size, u8_t *dst) {
 int Filesystem::flashWrite(uint32_t address, size_t size, void *src) {
 	int err;
 
-	trace_printf("Writing %u bytes to 0x%06x, buffer at 0x%x\n", size, address, src);
+	LOG(S_DEBUG, "Writing %u bytes to 0x%06x, buffer at 0x%x", size, address, src);
 
 	// DMA can do a maximum of 64K so limit to that
 	if(size >= 0xFFFF) {
@@ -639,7 +635,7 @@ int Filesystem::flashWrite(uint32_t address, size_t size, void *src) {
 	if(err != 0) {
 		this->endFlashTransaction();
 
-		trace_printf("Couldn't send write enable\n");
+		LOG(S_ERROR, "Couldn't send write enable");
 		return err;
 	}
 
@@ -651,7 +647,7 @@ int Filesystem::flashWrite(uint32_t address, size_t size, void *src) {
 	if(err != 0) {
 		this->endFlashTransaction();
 
-		trace_printf("Couldn't send write command with address 0x%06x\n", address);
+		LOG(S_ERROR, "Couldn't send write command with address 0x%06x", address);
 		return err;
 	}
 
@@ -685,7 +681,7 @@ int Filesystem::flashWrite(uint32_t address, size_t size, void *src) {
 				if(err != 0) {
 					this->endFlashTransaction();
 
-					trace_printf("Couldn't send write command with address 0x%06x, wrote %u bytes\n", address, bytesWritten);
+					LOG(S_ERROR, "Couldn't send write command with address 0x%06x, wrote %u bytes", address, bytesWritten);
 					return err;
 				}
 			}
@@ -703,7 +699,7 @@ int Filesystem::flashWrite(uint32_t address, size_t size, void *src) {
 	if(err != 0) {
 		this->endFlashTransaction();
 
-		trace_printf("Couldn't send write disable\n");
+		LOG(S_ERROR, "Couldn't send write disable");
 		return err;
 	}
 
@@ -728,11 +724,11 @@ s32_t _spiffs_write(u32_t addr, u32_t size, u8_t *src) {
  */
 int Filesystem::flashErase(uint32_t address, size_t size) {
 	int err;
-	trace_printf("Erasing %u bytes from 0x%06x\n", size, address);
+	LOG(S_DEBUG, "Erasing %u bytes from 0x%06x", size, address);
 
 	// TODO: implement hangling bigger cases than a 4K page
 	if(size != 0x1000) {
-		trace_printf("Erasing sizes other than 4K is unsupported\n");
+		LOG(S_ERROR, "Erasing sizes other than 4K is unsupported");
 		return -1;
 	}
 
@@ -748,7 +744,7 @@ int Filesystem::flashErase(uint32_t address, size_t size) {
 	if(err != 0) {
 		this->endFlashTransaction();
 
-		trace_printf("Couldn't send write enable\n");
+		LOG(S_ERROR, "Couldn't send write enable");
 		return err;
 	}
 
@@ -760,7 +756,7 @@ int Filesystem::flashErase(uint32_t address, size_t size) {
 	if(err != 0) {
 		this->endFlashTransaction();
 
-		trace_printf("Couldn't send erase command with address 0x%06x\n", address);
+		LOG(S_ERROR, "Couldn't send erase command with address 0x%06x", address);
 		return err;
 	}
 
@@ -775,7 +771,7 @@ int Filesystem::flashErase(uint32_t address, size_t size) {
 	if(err != 0) {
 		this->endFlashTransaction();
 
-		trace_printf("Couldn't send write disable\n");
+		LOG(S_ERROR, "Couldn't send write disable");
 		return err;
 	}
 

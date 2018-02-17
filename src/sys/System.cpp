@@ -4,14 +4,11 @@
  *  Created on: Feb 16, 2018
  *      Author: tristan
  */
+#define LOG_MODULE "SYS"
+
 #include "System.h"
 
-#include "FreeRTOSConfig.h"
-#include "FreeRTOS.h"
-#include "task.h"
-#include "timers.h"
-
-#include "cmsis_device.h"
+#include "LichtensteinApp.h"
 
 #include "../fs/Filesystem.h"
 
@@ -23,7 +20,7 @@ using namespace sys;
  * Callback for the system CPU usage output timer.
  */
 static void SystemCPUOutputTimerCallback(TimerHandle_t timer) {
-	trace_printf("CPU load: %u, idle = %u\n", System::sharedInstance()->getCPULoad(), System::sharedInstance()->getCPUIdleTime());
+	LOG(S_VERBOSE, "CPU load: %u, idle = %u", System::sharedInstance()->getCPULoad(), System::sharedInstance()->getCPUIdleTime());
 }
 
 
@@ -55,10 +52,10 @@ System::System() {
 	this->cpuLoad = new CPULoadProfiler();
 
 #if 1
-	this->cpuLoadOutputTimer = xTimerCreate("CPULoad", pdMS_TO_TICKS(1000),
+	this->cpuLoadOutputTimer = xTimerCreate("CPULoad", pdMS_TO_TICKS(10000),
 										   pdTRUE, nullptr,
 										   SystemCPUOutputTimerCallback);
-//	xTimerStart(this->cpuLoadOutputTimer, 0);
+	xTimerStart(this->cpuLoadOutputTimer, 0);
 #endif
 	// initialize the filesystem too
 	Filesystem::init();
