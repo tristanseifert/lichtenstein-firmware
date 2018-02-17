@@ -9,6 +9,8 @@
 #include "FreeRTOSConfig.h"
 #include "FreeRTOS.h"
 #include "task.h"
+#include "semphr.h"
+
 #include "cmsis_device.h"
 
 #include <cstring>
@@ -332,6 +334,9 @@ void Board::initConfigEEPROM(void) {
 	// enable the I2C
     I2C_Cmd(CFG_EEPROM_I2C, ENABLE);
 
+    // create the semaphore
+    i2cMutex = xSemaphoreCreateMutex();
+
     this->i2cResetFix();
 
     // TEST: write config info
@@ -412,7 +417,7 @@ int Board::i2cStart(uint8_t address, bool read, int timeout) {
 	I2C_GenerateSTART(CFG_EEPROM_I2C, ENABLE);
 
 	// wait for I2C EV5 (slave has acknowledged start condition)
-	int counter = timeout;
+	volatile int counter = timeout;
 
 	while(!I2C_CheckEvent(CFG_EEPROM_I2C, I2C_EVENT_MASTER_MODE_SELECT)) {
 		// decrement timeout
@@ -484,7 +489,7 @@ void Board::i2cWriteByte(uint8_t data) {
  * sent after the read, otherwise none is sent.
  */
 uint8_t Board::i2cReadByte(bool ack, int timeout) {
-	int counter = timeout;
+	volatile int counter = timeout;
 
 	// set the acknowledge config
 	if(ack) {
@@ -535,12 +540,18 @@ void Board::configEEPROMRead(void *buf, uint8_t address, uint8_t numBytes) {
 		return;
 	}
 
-	// enter critical section
+	// get lock enter critical section
+	xSemaphoreTake(this->i2cMutex, portMAX_DELAY);
+
 	taskENTER_CRITICAL();
+
 
 	// send the address
 	if(this->i2cStart(Board::configEEPROMI2CAddress, false) == 1) {
 		trace_puts("Timeout starting I2C transaction for address write!\n");
+
+		// return mutex
+		xSemaphoreGive(this->i2cMutex);
 
 		// leave critical section
 		taskEXIT_CRITICAL();
@@ -555,6 +566,9 @@ void Board::configEEPROMRead(void *buf, uint8_t address, uint8_t numBytes) {
 	// read the number of bytes the user wants
 	if(this->i2cStart(Board::configEEPROMI2CAddress, true) == 1) {
 		trace_puts("Timeout starting I2C transaction for data read!\n");
+
+		// return mutex
+		xSemaphoreGive(this->i2cMutex);
 
 		// leave critical section
 		taskEXIT_CRITICAL();
@@ -572,7 +586,8 @@ void Board::configEEPROMRead(void *buf, uint8_t address, uint8_t numBytes) {
 	// send a STOP condition
 	this->i2cStop();
 
-	// leave critical section
+	// return mutex and exit critical section
+	xSemaphoreGive(this->i2cMutex);
 	taskEXIT_CRITICAL();
 }
 
@@ -589,7 +604,9 @@ void Board::configEEPROMWrite(void *buf, uint8_t address, uint8_t numBytes) {
 		return;
 	}
 
-	// enter critical section
+	// get lock and enter critical section
+	xSemaphoreTake(this->i2cMutex, portMAX_DELAY);
+
 	taskENTER_CRITICAL();
 
 #if DEBUG_I2C_WRITES
@@ -614,6 +631,9 @@ void Board::configEEPROMWrite(void *buf, uint8_t address, uint8_t numBytes) {
 
 	if(this->i2cStart(Board::configEEPROMI2CAddress, false, Board::configEEPROMWriteTimeout) == 1) {
 		trace_puts("Timeout starting I2C transmission for write\n");
+
+		// return mutex
+		xSemaphoreGive(this->i2cMutex);
 
 		// leave critical section
 		taskEXIT_CRITICAL();
@@ -654,6 +674,9 @@ void Board::configEEPROMWrite(void *buf, uint8_t address, uint8_t numBytes) {
 				// send address
 				if(this->i2cStart(Board::configEEPROMI2CAddress, false, Board::configEEPROMWriteTimeout) == 1) {
 					trace_puts("Timeout starting I2C transmission for write\n");
+
+					// return mutex
+					xSemaphoreGive(this->i2cMutex);
 
 					// leave critical section
 					taskEXIT_CRITICAL();
@@ -696,7 +719,9 @@ void Board::configEEPROMWrite(void *buf, uint8_t address, uint8_t numBytes) {
 	trace_printf("done writing\n");
 #endif
 
-	// leave critical section
+	// return mutex and exit critical section
+	xSemaphoreGive(this->i2cMutex);
+
 	taskEXIT_CRITICAL();
 }
 

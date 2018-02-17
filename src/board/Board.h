@@ -8,6 +8,10 @@
 #ifndef BOARD_BOARD_H_
 #define BOARD_BOARD_H_
 
+#include "FreeRTOSConfig.h"
+#include "FreeRTOS.h"
+#include "semphr.h"
+
 #include <cstdint>
 #include <cstddef>
 
@@ -70,6 +74,8 @@ class Board {
 		uint8_t i2cReadByte(bool ack = true, int timeout = 20000);
 
 		void _testWriteBoardConfig(void);
+
+		SemaphoreHandle_t i2cMutex;
 
 	public:
 		void configEEPROMRead(void *buf, uint8_t address, uint8_t numBytes);

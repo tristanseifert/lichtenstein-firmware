@@ -13,6 +13,8 @@
 
 #include "cmsis_device.h"
 
+#include "../fs/Filesystem.h"
+
 static System *gSystem = nullptr;
 
 using namespace sys;
@@ -39,7 +41,7 @@ void System::init(void) {
 }
 
 /**
- * Returns the shared output handler instance.
+ * Returns the shared system handler instance.
  */
 System *System::sharedInstance() noexcept {
 	return gSystem;
@@ -58,6 +60,8 @@ System::System() {
 										   SystemCPUOutputTimerCallback);
 //	xTimerStart(this->cpuLoadOutputTimer, 0);
 #endif
+	// initialize the filesystem too
+	Filesystem::init();
 }
 
 /**

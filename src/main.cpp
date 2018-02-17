@@ -85,8 +85,8 @@ int main(int argc, char* argv[]) {
 	vPortDefineHeapRegions(xHeapRegions);
 
 	// set up hardware
-	System::init();
 	Board::init();
+	System::init();
 	Network::init();
 
 	Clock::init();
