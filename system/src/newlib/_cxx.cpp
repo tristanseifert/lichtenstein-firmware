@@ -32,6 +32,8 @@
 
 // ----------------------------------------------------------------------------
 
+#include "LichtensteinApp.h"
+
 #include <cstdlib>
 #include <sys/types.h>
 #include "diag/Trace.h"
@@ -47,7 +49,7 @@ namespace __gnu_cxx
   void
   __verbose_terminate_handler()
   {
-    trace_puts(__func__);
+	    LOG(S_ERROR, __func__);
     abort();
   }
 }
@@ -63,7 +65,7 @@ extern "C"
   void
   __cxa_pure_virtual()
   {
-    trace_puts(__func__);
+    LOG(S_ERROR, __func__);
     abort();
   }
 }

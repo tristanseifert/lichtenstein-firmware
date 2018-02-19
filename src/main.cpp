@@ -43,7 +43,7 @@
 /**
  * Stack overflow handler
  */
-void vApplicationStackOverflowHook(TaskHandle_t xTask, signed char *pcTaskName) {
+extern "C" void vApplicationStackOverflowHook(TaskHandle_t xTask, signed char *pcTaskName) {
 	LOG(S_FATAL, "Stack overflow in task %s!", pcTaskName);
 
 	while(1);

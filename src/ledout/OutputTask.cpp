@@ -23,7 +23,7 @@
 #define ADDR_BITBAND(base, bit)				(uint32_t *) (0x22000000 + ((((uint32_t) base) - 0x20000000) * 32) + (bit * 4))
 
 // configuration
-#define LEDOUT_TASK_STACK_SZ 				configMINIMAL_STACK_SIZE
+#define LEDOUT_TASK_STACK_SZ 				150
 #define LEDOUT_TASK_PRIORITY					(3)
 
 // size of the output buffers
@@ -39,6 +39,23 @@ static const int outputBytesPerPixel = (bytesPerPixel * 8 * outputBitsPerDataBit
 static const int outputBufSz = (ledsPerChannel * outputBytesPerPixel) + 4;
 
 namespace ledout {
+
+/**
+ * Callback for the FPS calculation timer.
+ */
+void OutputFPSTimerCallback(TimerHandle_t timer) {
+	void *ctx = pvTimerGetTimerID(timer);
+	OutputTask *task = static_cast<OutputTask *>(ctx);
+
+	// ~ do stuff ~
+	LOG(S_INFO, "FPS: %d %d %d %d", task->fpsCounter[0], task->fpsCounter[1], task->fpsCounter[2], task->fpsCounter[3]);
+
+	// clear the counters back to zero
+	for(int i = 0; i < OutputTask::maxOutputBuffers; i++) {
+		task->fps[i] = task->fpsCounter[i];
+		task->fpsCounter[i] = 0;
+	}
+}
 
 /**
  * C trampoline to go into the FreeRTOS task.
@@ -65,6 +82,13 @@ OutputTask::OutputTask() {
 	// allocate buffers
 	memset(&this->rgbwBuffer, 0, sizeof(this->rgbwBuffer));
 	memset(&this->outputBuffer, 0, sizeof(this->outputBuffer));
+
+	for(int i = 0; i < OutputTask::maxOutputBuffers; i++) {
+		this->fpsCounter[i] = this->fps[i] = 0;
+
+		// conservative default value
+		this->ledsPerBuffer[i] = 150;
+	}
 
 	this->allocBuffers();
 }
@@ -116,20 +140,28 @@ void OutputTask::allocBuffers(void) {
 void OutputTask::taskEntry(void) noexcept {
 	Output *o = Output::sharedInstance();
 
+	// create the FPS timer
+	this->fpsTimer = xTimerCreate("OutFPS", pdMS_TO_TICKS(1000), pdTRUE, this,
+								 OutputFPSTimerCallback);
+	xTimerStart(this->fpsTimer, portMAX_DELAY);
+
+	// enable output
+	o->setOutputEnable(true);
+
+	// keep pulling new RGBW buffers off the queue and process them
 	while(1) {
 		// convert each RGB buffer
 		for(int i = 0; i < numOutputChannels; i++) {
-			this->convertBuffer(i);
+			this->convertBuffer(i, this->ledsPerBuffer[i]);
 		}
 
 		// enable output and output each buffer
-		o->setOutputEnable(true);
-
 		for(int i = 0; i < numOutputChannels; i++) {
 			// TODO: output the second buffer correctly too ;)
-			o->outputData(i, this->outputBuffer[0], outputBufSz);
-		}
+			o->outputData(i, this->outputBuffer[0], this->outputBufferBytesWritten[0]);
 
+			this->fpsCounter[i]++;
+		}
 
 		this->rgbwBuffer[0][0].r += 1;
 		this->rgbwBuffer[0][1].g += 2;
@@ -137,7 +169,7 @@ void OutputTask::taskEntry(void) noexcept {
 		this->rgbwBuffer[0][3].w += 4;
 
 		// delay lol
-		vTaskDelay(4);
+		vTaskDelay(2);
 	}
 }
 
@@ -149,12 +181,19 @@ void OutputTask::taskEntry(void) noexcept {
  * - A 0 bit is 0b100
  * - A 1 bit is 0b110
  */
-void OutputTask::convertBuffer(int buffer) {
-	uint8_t *buf = (this->outputBuffer[buffer] + 1); // first byte is zero
+void OutputTask::convertBuffer(int buffer, int pixels) {
+	uint8_t *buf = (this->outputBuffer[buffer]); // first byte is zero
 	uint8_t *read = reinterpret_cast<uint8_t *>(this->rgbwBuffer[buffer]);
 
+	// keep track of how many bytes we write
+	uint8_t *bufStart = buf;
+	this->outputBufferBytesWritten[buffer] = 0;
+
+	// first byte is zero
+	*buf++ = 0x00;
+
 	// read each LED
-	for(int i = 0; i < ledsPerChannel; i++) {
+	for(int i = 0; i < pixels; i++) {
 		// read each color
 		for(int j = 0; j < 4; j++) {
 			uint8_t byte = *read++;
@@ -171,6 +210,11 @@ void OutputTask::convertBuffer(int buffer) {
 		}
 	}
 
+	// write zero byte at the end
+	*buf++ = 0x00;
+
+	// get how many bytes we wrote
+	this->outputBufferBytesWritten[buffer] = (buf - bufStart);
 
 }
 

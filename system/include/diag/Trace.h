@@ -71,18 +71,8 @@ extern "C"
   trace_write(const char* buf, size_t nbyte);
 
   // ----- Portable -----
+  int trace_putchar(int c);
 
-  int
-  trace_printf(const char* format, ...);
-
-  int
-  trace_puts(const char *s);
-
-  int
-  trace_putchar(int c);
-
-  void
-  trace_dump_args(int argc, char* argv[]);
 
 #if defined(__cplusplus)
 }

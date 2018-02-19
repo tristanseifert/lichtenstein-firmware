@@ -12,6 +12,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "LichtensteinApp.h"
+
 typedef int32_t s32_t;
 typedef uint32_t u32_t;
 typedef int16_t s16_t;
@@ -25,19 +27,19 @@ typedef uint8_t u8_t;
 
 // Set generic spiffs debug output call.
 #ifndef SPIFFS_DBG
-#define SPIFFS_DBG(_f, ...) trace_printf(_f, ## __VA_ARGS__)
+#define SPIFFS_DBG(_f, ...) LOG(S_DEBUG, _f, ## __VA_ARGS__)
 #endif
 // Set spiffs debug output call for garbage collecting.
 #ifndef SPIFFS_GC_DBG
-#define SPIFFS_GC_DBG(_f, ...) trace_printf(_f, ## __VA_ARGS__)
+#define SPIFFS_GC_DBG(_f, ...) LOG(S_DEBUG, _f, ## __VA_ARGS__)
 #endif
 // Set spiffs debug output call for caching.
 #ifndef SPIFFS_CACHE_DBG
-#define SPIFFS_CACHE_DBG(_f, ...) trace_printf(_f, ## __VA_ARGS__)
+#define SPIFFS_CACHE_DBG(_f, ...) LOG(S_DEBUG, _f, ## __VA_ARGS__)
 #endif
 // Set spiffs debug output call for system consistency checks.
 #ifndef SPIFFS_CHECK_DBG
-#define SPIFFS_CHECK_DBG(_f, ...) trace_printf(_f, ## __VA_ARGS__)
+#define SPIFFS_CHECK_DBG(_f, ...) LOG(S_DEBUG, _f, ## __VA_ARGS__)
 #endif
 // Set spiffs debug output call for all api invocations.
 #ifndef SPIFFS_API_DBG
@@ -176,7 +178,7 @@ typedef uint8_t u8_t;
 // not on mount point. If not, SPIFFS_format must be called prior to mounting
 // again.
 #ifndef SPIFFS_USE_MAGIC
-#define SPIFFS_USE_MAGIC                (0)
+#define SPIFFS_USE_MAGIC                (1)
 #endif
 
 #if SPIFFS_USE_MAGIC

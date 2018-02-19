@@ -29,7 +29,7 @@ static Filesystem *gFilesystem = nullptr;
 #define FLASH_DMA_THRESHOLD					(1024*1024)
 
 // task configuration
-#define FS_TASK_STACK_SZ 					configMINIMAL_STACK_SIZE
+#define FS_TASK_STACK_SZ 					200
 #define FS_TASK_PRIORITY						(4)
 
 // filesystem configuration
@@ -39,7 +39,7 @@ static Filesystem *gFilesystem = nullptr;
 #define FS_FLASH_BLOCK_SIZE					(1024 * 4)
 
 /// size of the file descriptor buffer
-#define FS_FDBUF_SIZE						(32 * 4)
+#define FS_FDBUF_SIZE						(32 * 16)
 #define FS_CACHE_BUF_SIZE					((FS_PAGE_SIZE + 32) * 4)
 
 #if HW == HW_MUSTARD
@@ -145,6 +145,9 @@ Filesystem::Filesystem() {
 
 	// create the filesystem task
 	this->setUpTask();
+
+	// read the flash memory's ID and sizing
+	this->readFlashID();
 }
 
 /**
@@ -218,6 +221,10 @@ void Filesystem::setUpSPI(void) {
 
 	SPI_Init(FLASH_SPI_PERIPH, &spi);
 	SPI_Cmd(FLASH_SPI_PERIPH, ENABLE);
+
+	// read a dummy byte (this fixes an issue with the first byte being lost)
+	this->spiWaitRXReady();
+	(void) this->spiRead();
 }
 
 /**
@@ -257,7 +264,7 @@ void Filesystem::setUpTask(void) {
 					 this, FS_TASK_PRIORITY, &this->task);
 
 	if(ok != pdPASS) {
-		trace_puts("Couldn't create filesystem task!");
+		LOG(S_ERROR, "Couldn't create filesystem task!");
 	}
 
 	// create the mutex protecting the flash
@@ -286,7 +293,7 @@ void Filesystem::taskEntry(void) {
 /**
  * Attempts to mount the filesystem.
  */
-void Filesystem::spiffsMount(void) {
+void Filesystem::spiffsMount(bool triedFormat) {
 	int ret;
 
 	// allocate some buffers
@@ -310,11 +317,82 @@ void Filesystem::spiffsMount(void) {
 	// try and mount it
 	ret = SPIFFS_mount(&this->fs, &cfg, this->fsWorkBuf, this->fsFileDescriptors,
 					   FS_FDBUF_SIZE, this->fsCache, FS_CACHE_BUF_SIZE, 0);
-	LOG(S_DEBUG, "spiffs mount: %u", ret);
+
+	if(ret == SPIFFS_ERR_NOT_A_FS) {
+		// if we just tried to re-format but it failed, error out
+		if(triedFormat) {
+			LOG(S_FATAL, "tried to reformat FS but that didn't work. something is real fucky");
+			return;
+		}
+
+		LOG(S_WARN, "spiffs mount failure, not a filesystem: formatting");
+
+		// attempt to format
+		ret = SPIFFS_format(&this->fs);
+
+		if(ret != SPIFFS_OK) {
+			LOG(S_ERROR, "error formatting: %d", ret);
+		} else {
+			// if it was successful, attempt to mount it again
+			LOG(S_INFO, "format success, re-mounting...");
+
+			this->spiffsMount(true);
+		}
+	} else if(ret != 0) {
+		// unmount the filesystem
+		SPIFFS_unmount(&this->fs);
+
+		LOG(S_ERROR, "spiffs mount returned %d, aborting");
+	}
 }
 
 
 
+
+/**
+ * Reads the JDEC ID out of the SPI flash.
+ */
+void Filesystem::readFlashID(void) {
+	int err;
+
+	// start a flash transaction
+	if(this->startFlashTransaction() != 0) {
+		LOG(S_ERROR, "Couldn't start flash transaction for JDEC ID read");
+
+		return;
+	}
+
+	// send the read command and address
+	err = this->flashCommand(FLASH_CMD_JDEC_ID);
+
+	if(err != 0) {
+		// end transaction
+		this->endFlashTransaction();
+
+		LOG(S_ERROR, "Couldn't send JDEC ID command");
+		return;
+	}
+
+	// clear JDEC ID
+	this->jdecId = 0;
+
+	// read the manufacturer byte
+	this->spiWaitRXReady();
+	this->jdecId |= (this->spiRead() << 16);
+
+	// read the memory type byte
+	this->spiWaitRXReady();
+	this->jdecId |= (this->spiRead() << 8);
+
+	// read the memory size byte
+	this->spiWaitRXReady();
+	this->jdecId |= this->spiRead();
+
+	LOG(S_INFO, "Flash JDEC ID: 0x%06x", this->jdecId);
+
+	// end the flash transaction we started earlier
+	this->endFlashTransaction();
+}
 
 /**
  * Sets the state of the flash's /CS line. When the active is true, the chip
@@ -391,6 +469,11 @@ void Filesystem::spiWaitTXReady(void) {
  */
 void Filesystem::spiWaitRXReady(void) {
 	// TODO: would this be better with interrupts?
+
+	// send a dummy byte so we can read a byte
+	this->spiWaitTXReady();
+	this->spiWrite(0x00);
+
 	// poll the "RX buffer not empty" flag til it's set
     while(SPI_I2S_GetFlagStatus(FLASH_SPI_PERIPH, SPI_I2S_FLAG_RXNE) == RESET) {
 
@@ -408,7 +491,11 @@ void Filesystem::spiWrite(uint8_t byte) {
  * Reads a byte from the SPI peripheral.
  */
 uint8_t Filesystem::spiRead(void) {
-	return (uint8_t) SPI_I2S_ReceiveData(FLASH_SPI_PERIPH);
+	uint8_t read = (uint8_t) SPI_I2S_ReceiveData(FLASH_SPI_PERIPH);
+
+	(void) read; // for debugfger
+
+	return read;
 }
 
 /**

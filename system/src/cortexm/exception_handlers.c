@@ -26,6 +26,7 @@
  */
 
 // ----------------------------------------------------------------------------
+#include "LichtensteinApp.h"
 
 #include "cortexm/ExceptionHandlers.h"
 #include "cmsis_device.h"
@@ -105,31 +106,21 @@ dumpExceptionStack (ExceptionStackFrame* frame,
                 uint32_t cfsr, uint32_t mmfar, uint32_t bfar,
                                         uint32_t lr)
 {
-  trace_printf ("Stack frame:\n");
-  trace_printf (" R0 =  %08X\n", frame->r0);
-  trace_printf (" R1 =  %08X\n", frame->r1);
-  trace_printf (" R2 =  %08X\n", frame->r2);
-  trace_printf (" R3 =  %08X\n", frame->r3);
-  trace_printf (" R12 = %08X\n", frame->r12);
-  trace_printf (" LR =  %08X\n", frame->lr);
-  trace_printf (" PC =  %08X\n", frame->pc);
-  trace_printf (" PSR = %08X\n", frame->psr);
-  trace_printf ("FSR/FAR:\n");
-  trace_printf (" CFSR =  %08X\n", cfsr);
-  trace_printf (" HFSR =  %08X\n", SCB->HFSR);
-  trace_printf (" DFSR =  %08X\n", SCB->DFSR);
-  trace_printf (" AFSR =  %08X\n", SCB->AFSR);
+	LOG_ISR(S_ERROR, "Stack frame: R0 = %08X, R1 = %08X, R2 = %08X, R3 = %08X", frame->r0, frame->r1, frame->r2, frame->r3);
+	LOG_ISR(S_ERROR, "Stack frame: R12 = %08X, LR = %08X, PC = %08X, PSR = %08X", frame->r12, frame->lr, frame->pc, frame->psr);
+
+	LOG_ISR(S_ERROR, "FSR/FAR: CFSR = %08X, HFSR = %08X, DFSR = %08X, AFSR = %08X", cfsr, SCB->HFSR, SCB->DFSR, SCB->AFSR);
 
   if (cfsr & (1UL << 7))
     {
-      trace_printf (" MMFAR = %08X\n", mmfar);
+	  LOG_ISR(S_ERROR, "MMFAR = %08X", mmfar);
     }
   if (cfsr & (1UL << 15))
     {
-      trace_printf (" BFAR =  %08X\n", bfar);
+	  LOG_ISR(S_ERROR, "BFAR = %08X", bfar);
     }
-  trace_printf ("Misc\n");
-  trace_printf (" LR/EXC_RETURN= %08X\n", lr);
+
+  LOG_ISR(S_ERROR, "LR/EXC_RETURN= %08X\n", lr);
 }
 
 #endif // defined(__ARM_ARCH_7M__) || defined(__ARM_ARCH_7EM__)
@@ -395,7 +386,7 @@ HardFault_Handler_C (ExceptionStackFrame* frame __attribute__((unused)),
 #endif
 
 #if defined(TRACE)
-  trace_printf ("[HardFault]\n");
+  LOG_ISR(S_ERROR, "[HardFault]");
   dumpExceptionStack (frame, cfsr, mmfar, bfar, lr);
 #endif // defined(TRACE)
 
@@ -505,7 +496,7 @@ BusFault_Handler_C (ExceptionStackFrame* frame __attribute__((unused)),
   uint32_t bfar = SCB->BFAR; // Bus Fault Address
   uint32_t cfsr = SCB->CFSR; // Configurable Fault Status Registers
 
-  trace_printf ("[BusFault]\n");
+  LOG_ISR(S_ERROR, "[BusFault]\n");
   dumpExceptionStack (frame, cfsr, mmfar, bfar, lr);
 #endif // defined(TRACE)
 
@@ -559,7 +550,7 @@ UsageFault_Handler_C (ExceptionStackFrame* frame __attribute__((unused)),
 #endif
 
 #if defined(TRACE)
-  trace_printf ("[UsageFault]\n");
+  LOG_ISR(S_ERROR, "[UsageFault]\n");
   dumpExceptionStack (frame, cfsr, mmfar, bfar, lr);
 #endif // defined(TRACE)
 

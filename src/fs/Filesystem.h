@@ -30,6 +30,8 @@ class Filesystem {
 
 		void setUpTask(void);
 
+		void readFlashID(void);
+
 		virtual ~Filesystem();
 
 	private:
@@ -51,6 +53,8 @@ class Filesystem {
 		SemaphoreHandle_t flashMutex;
 
 	private:
+		uint32_t jdecId = 0;
+
 		void spiPulseCS(void);
 
 		void spiWaitIdle(void);
@@ -77,7 +81,7 @@ class Filesystem {
 		uint8_t *fsFileDescriptors = nullptr;
 		uint8_t *fsCache = nullptr;
 
-		void spiffsMount(void);
+		void spiffsMount(bool triedFormat = false);
 };
 
 #endif /* FS_FILESYSTEM_H_ */

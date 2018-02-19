@@ -545,7 +545,7 @@ void Board::configEEPROMRead(void *buf, uint8_t address, uint8_t numBytes) {
 
 	// send the address
 	if(this->i2cStart(Board::configEEPROMI2CAddress, false) == 1) {
-		trace_puts("Timeout starting I2C transaction for address write!");
+		LOG(S_ERROR, "Timeout starting I2C transaction for address write!");
 
 		// return mutex
 		xSemaphoreGive(this->i2cMutex);
@@ -562,7 +562,7 @@ void Board::configEEPROMRead(void *buf, uint8_t address, uint8_t numBytes) {
 
 	// read the number of bytes the user wants
 	if(this->i2cStart(Board::configEEPROMI2CAddress, true) == 1) {
-		trace_puts("Timeout starting I2C transaction for data read!");
+		LOG(S_ERROR, "Timeout starting I2C transaction for data read!");
 
 		// return mutex
 		xSemaphoreGive(this->i2cMutex);

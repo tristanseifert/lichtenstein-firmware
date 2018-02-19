@@ -65,6 +65,10 @@ System::System() {
  * Deletes the stuff we allocated earlier.
  */
 System::~System() {
+	// kill the timer
+	xTimerStop(this->cpuLoadOutputTimer, 0);
+
+	// delete profiler for CPU load
 	delete this->cpuLoad;
 }
 

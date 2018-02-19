@@ -12,6 +12,7 @@
 
 #include <stdint.h>
 #include <unistd.h>
+#include <stdbool.h>
 
 /**
  * Logging severity. Messages with a severity lower than what the logger is
@@ -31,15 +32,25 @@ typedef enum {
  * Define the logging function: this is printf-like after the first few
  * arguments to do with tracking the module and file.
  */
-extern "C" int _LoggerDoLog(logger_severity_t severity, const char *module, const char *file, int line, const char *format, ...);
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+extern int _LoggerDoLog(bool fromISR, logger_severity_t severity, const char *module, const char *file, int line, const char *format, ...);
+
+#ifdef __cplusplus
+}
+#endif
 
 /**
  * Logging macro.
  */
 #ifdef LOG_MODULE
-	#define LOG(sev, format...)_LoggerDoLog(sev, LOG_MODULE, __FILE__, __LINE__, format)
+	#define LOG(sev, format...)_LoggerDoLog(false, sev, LOG_MODULE, __FILE__, __LINE__, format)
+	#define LOG_ISR(sev, format...)_LoggerDoLog(true, sev, LOG_MODULE, __FILE__, __LINE__, format)
 #else
-	#define LOG(sev, format...)_LoggerDoLog(sev, 0, __FILE__, __LINE__, format)
+	#define LOG(sev, format...)_LoggerDoLog(false, sev, 0, __FILE__, __LINE__, format)
+	#define LOG_ISR(sev, format...)_LoggerDoLog(true, sev, 0, __FILE__, __LINE__, format)
 #endif
 
 #define S_FATAL								kSeverityFatal

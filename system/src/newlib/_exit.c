@@ -30,6 +30,8 @@
 #include <stdlib.h>
 #include "diag/Trace.h"
 
+#include "LichtensteinApp.h"
+
 // ----------------------------------------------------------------------------
 
 #if !defined(DEBUG)
@@ -73,7 +75,7 @@ void
 __attribute__((weak,noreturn))
 abort(void)
 {
-  trace_puts("abort(), exiting...");
+	LOG(S_ERROR, "abort(), exiting...");
 
   _exit(1);
 }

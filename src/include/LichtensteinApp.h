@@ -19,6 +19,7 @@
 #include "task.h"
 #include "semphr.h"
 #include "queue.h"
+#include "timers.h"
 
 // CMSIS
 #include "cmsis_device.h"

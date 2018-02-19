@@ -31,6 +31,8 @@
 
 #include "diag/Trace.h"
 
+#include "LichtensteinApp.h"
+
 // ----------------------------------------------------------------------------
 
 void
@@ -67,7 +69,7 @@ void
 __attribute__((noreturn, weak))
 assert_failed (uint8_t* file, uint32_t line)
 {
-  trace_printf ("assert_param() failed: file \"%s\", line %d\n", file, line);
+  LOG(S_FATAL, "assert_param() failed: file \"%s\", line %d\n", file, line);
   abort();
   /* NOTREACHED */
 }

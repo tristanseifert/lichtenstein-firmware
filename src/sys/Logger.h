@@ -38,9 +38,9 @@ class Logger {
 		void taskEntry(void);
 
 	private:
-		friend int _LoggerDoLog(logger_severity_t, const char *, const char *, int, const char *, ...);
+		friend int _LoggerDoLog(bool, logger_severity_t, const char *, const char *, int, const char *, ...);
 
-		int log(logger_severity_t severity, const char *module, const char *file, int line, const char *format, va_list ap);
+		int log(bool fromISR, logger_severity_t severity, const char *module, const char *file, int line, const char *format, va_list ap);
 };
 
 #endif /* SYS_LOGGER_H_ */

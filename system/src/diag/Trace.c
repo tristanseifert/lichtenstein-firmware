@@ -42,7 +42,7 @@
 
 // ----------------------------------------------------------------------------
 
-int
+/*int
 trace_printf(const char* format, ...) {
   int ret;
   va_list ap;
@@ -70,7 +70,7 @@ trace_puts(const char *s)
 {
   trace_write(s, strlen(s));
   return trace_write("\n", 1);
-}
+}*/
 
 int
 trace_putchar(int c)

@@ -145,7 +145,7 @@ void Logger::taskEntry(void) {
 /**
  * Performs actual logging. Returns the length of the debug message if sent.
  */
-int Logger::log(logger_severity_t severity, const char *module, const char *file, int line, const char *format, va_list ap) {
+int Logger::log(bool fromISR, logger_severity_t severity, const char *module, const char *file, int line, const char *format, va_list ap) {
 	int ret;
 	char *bufferCopy = nullptr;
 
@@ -168,7 +168,7 @@ int Logger::log(logger_severity_t severity, const char *module, const char *file
 	}
 
 	// if the FreeRTOS scheduler is running, push it to the log task
-	if(taskRunning) {
+	if(taskRunning && fromISR == false) {
 		BaseType_t queued;
 
 		// release the semaphore to the global buffer
@@ -205,14 +205,14 @@ int Logger::log(logger_severity_t severity, const char *module, const char *file
 	return ret;
 }
 
-extern "C" int _LoggerDoLog(logger_severity_t severity, const char *module, const char *file, int line, const char *format, ...) {
+extern "C" int _LoggerDoLog(bool fromISR, logger_severity_t severity, const char *module, const char *file, int line, const char *format, ...) {
 	int ret;
 
 	// set up the variadic arguments and call into the logger
 	va_list ap;
 	va_start(ap, format);
 
-	ret = Logger::sharedInstance()->log(severity, module, file, line, format, ap);
+	ret = Logger::sharedInstance()->log(fromISR, severity, module, file, line, format, ap);
 
 	va_end(ap);
 	return ret;
