@@ -185,11 +185,11 @@ void OutputTask::convertBuffer(int index, int pixels, void *bufferPtr) {
 	uint8_t *buf = (this->outputBuffer[index]); // first byte is zero
 
 	// get the read buffer
-	uint8_t *read;
+	rgbw_pixel_t *read;
 	if(bufferPtr) {
-		read = reinterpret_cast<uint8_t *>(bufferPtr);
+		read = reinterpret_cast<rgbw_pixel_t *>(bufferPtr);
 	} else {
-		read = reinterpret_cast<uint8_t *>(this->rgbwBuffer[index]);
+		read = reinterpret_cast<rgbw_pixel_t *>(this->rgbwBuffer[index]);
 	}
 
 	// keep track of how many bytes we write
@@ -203,18 +203,33 @@ void OutputTask::convertBuffer(int index, int pixels, void *bufferPtr) {
 	for(int i = 0; i < pixels; i++) {
 		// read each color
 		for(int j = 0; j < 4; j++) {
-			uint8_t byte = *read++;
+			/*
+			 * Copy the bytes in kind of a whacky order. The hardware is
+			 * designed for the SK6812RGBW LEDs - the datasheets online seem
+			 * to be incorrect about the order of the bytes. The plain SK6812
+			 * takes data in GRB order (wtf) and it seems like the SK6812RGBW
+			 * take it in GRBW order rather than RGBW as the datasheets say,
+			 * so we do a bit of swapping here to make it work.
+			 */
+			uint8_t byte = 0x00;
+
+			if(j == 0) byte = read->g;
+			else if(j == 1) byte = read->r;
+			else if(j == 2) byte = read->b;
+			else if(j == 3) byte = read->w;
+
+			// TODO: cleaner way of doing this?
 			uint32_t patternData = bitPatternLut[byte];
 			uint8_t *pattern = reinterpret_cast<uint8_t *>(&patternData);
-
-//			LOG(S_DEBUG, "Read byte 0x%02x, pattern 0x%06x", byte, patternData);
-//			LOG(S_DEBUG, "\t %02x %02x %02x", pattern[2], pattern[1], pattern[0]);
 
 			// copy the bytes in REVERSE order because ARM is little endian
 			*buf++ = pattern[2];
 			*buf++ = pattern[1];
 			*buf++ = pattern[0];
 		}
+
+		// go to the next pixel
+		read++;
 	}
 
 	// write zero byte at the end
