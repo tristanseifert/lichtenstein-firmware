@@ -221,10 +221,6 @@ void Filesystem::setUpSPI(void) {
 
 	SPI_Init(FLASH_SPI_PERIPH, &spi);
 	SPI_Cmd(FLASH_SPI_PERIPH, ENABLE);
-
-	// read a dummy byte (this fixes an issue with the first byte being lost)
-	this->spiWaitRXReady();
-	(void) this->spiRead();
 }
 
 /**
@@ -377,18 +373,15 @@ void Filesystem::readFlashID(void) {
 	this->jdecId = 0;
 
 	// read the manufacturer byte
-	this->spiWaitRXReady();
 	this->jdecId |= (this->spiRead() << 16);
 
 	// read the memory type byte
-	this->spiWaitRXReady();
 	this->jdecId |= (this->spiRead() << 8);
 
 	// read the memory size byte
-	this->spiWaitRXReady();
 	this->jdecId |= this->spiRead();
 
-	LOG(S_INFO, "Flash JDEC ID: 0x%06x", this->jdecId);
+	LOG(S_INFO, "Flash JDEC ID: 0x%08x", this->jdecId);
 
 	// end the flash transaction we started earlier
 	this->endFlashTransaction();
@@ -463,34 +456,44 @@ void Filesystem::spiWaitTXReady(void) {
 
     }
 }
-
 /**
  * Waits for a byte to be available to read out from the SPI.
  */
 void Filesystem::spiWaitRXReady(void) {
 	// TODO: would this be better with interrupts?
 
-	// send a dummy byte so we can read a byte
+/*	// send a dummy byte so we can read a byte
 	this->spiWaitTXReady();
 	this->spiWrite(0x00);
 
 	// poll the "RX buffer not empty" flag til it's set
     while(SPI_I2S_GetFlagStatus(FLASH_SPI_PERIPH, SPI_I2S_FLAG_RXNE) == RESET) {
 
-    }
+    }*/
 }
 
 /**
  * Writes a byte to the SPI peripheral.
  */
 void Filesystem::spiWrite(uint8_t byte) {
+	// waits for the SPI peripheral to be ready for data
+	this->spiWaitTXReady();
+
+	// write a byte
 	SPI_I2S_SendData(FLASH_SPI_PERIPH, byte);
 }
-
 /**
  * Reads a byte from the SPI peripheral.
  */
 uint8_t Filesystem::spiRead(void) {
+	// send a dummy byte so we can read a byte
+	this->spiWrite(0x00);
+
+	// poll the "RX buffer not empty" flag til it's set
+	while(SPI_I2S_GetFlagStatus(FLASH_SPI_PERIPH, SPI_I2S_FLAG_RXNE) == RESET) {
+
+	}
+
 	uint8_t read = (uint8_t) SPI_I2S_ReceiveData(FLASH_SPI_PERIPH);
 
 	(void) read; // for debugfger
@@ -511,9 +514,7 @@ void Filesystem::spiPulseCS(void) {
 	// de-assert CS, write a dummy byte, wait for it to send, re-assert it
 	this->setFlashCS(false);
 
-	this->spiWaitTXReady();
 	this->spiWrite(0x00);
-	this->spiWaitTXReady();
 
 	this->setFlashCS(true);
 
@@ -542,7 +543,6 @@ int Filesystem::flashCommand(uint8_t command) {
 	taskENTER_CRITICAL();
 
 	// check that the SPI is ready to accept a write and transmit the command
-	this->spiWaitTXReady();
 	this->spiWrite(command);
 
 	// wait for the command to have been completely transmitted
@@ -578,23 +578,14 @@ int Filesystem::flashCommandWithAddress(uint8_t command, uint32_t address, bool 
 	}
 
 	// write the address, MSB first
-	this->spiWaitTXReady();
 	this->spiWrite((address & 0x00FF0000) >> 16);
-
-	this->spiWaitTXReady();
 	this->spiWrite((address & 0x0000FF00) >> 8);
-
-	this->spiWaitTXReady();
 	this->spiWrite((address & 0x000000FF));
 
 	// check if we need to do a dummy cycle
 	if(dummyCycle) {
-		this->spiWaitTXReady();
 		this->spiWrite(0x00);
 	}
-
-	// wait for the command to have been completely transmitted
-//	this->spiWaitTXReady();
 
 	// exit the critical section
 	taskEXIT_CRITICAL();
@@ -669,8 +660,6 @@ int Filesystem::flashRead(uint32_t address, size_t size, void *dst) {
 		uint8_t *outBuf = reinterpret_cast<uint8_t *>(dst);
 
 		for(unsigned int i = 0; i < size; i++) {
-			this->spiWaitRXReady();
-
 			// read a byte
 			outBuf[i] = this->spiRead();
 		}
@@ -743,14 +732,12 @@ int Filesystem::flashWrite(uint32_t address, size_t size, void *src) {
 	unsigned int bytesWritten = 0, endOfCommand = 0;
 
 	for(unsigned int i = 0; i < size; i++) {
-		this->spiWaitTXReady();
 		this->spiWrite(outBuf[i]);
 		bytesWritten++; endOfCommand++;
 
 		// have two bytes been written?
 		if(endOfCommand == 2) {
 			// wait for the data to be sent and the peripheral to be idle
-			this->spiWaitTXReady();
 			this->spiWaitIdle();
 
 			// de-assert CS, wait for the write operation to complete

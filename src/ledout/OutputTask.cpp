@@ -181,13 +181,20 @@ void OutputTask::taskEntry(void) noexcept {
  * - A 0 bit is 0b100
  * - A 1 bit is 0b110
  */
-void OutputTask::convertBuffer(int buffer, int pixels) {
-	uint8_t *buf = (this->outputBuffer[buffer]); // first byte is zero
-	uint8_t *read = reinterpret_cast<uint8_t *>(this->rgbwBuffer[buffer]);
+void OutputTask::convertBuffer(int index, int pixels, void *bufferPtr) {
+	uint8_t *buf = (this->outputBuffer[index]); // first byte is zero
+
+	// get the read buffer
+	uint8_t *read;
+	if(bufferPtr) {
+		read = reinterpret_cast<uint8_t *>(bufferPtr);
+	} else {
+		read = reinterpret_cast<uint8_t *>(this->rgbwBuffer[index]);
+	}
 
 	// keep track of how many bytes we write
 	uint8_t *bufStart = buf;
-	this->outputBufferBytesWritten[buffer] = 0;
+	this->outputBufferBytesWritten[index] = 0;
 
 	// first byte is zero
 	*buf++ = 0x00;
@@ -214,7 +221,7 @@ void OutputTask::convertBuffer(int buffer, int pixels) {
 	*buf++ = 0x00;
 
 	// get how many bytes we wrote
-	this->outputBufferBytesWritten[buffer] = (buf - bufStart);
+	this->outputBufferBytesWritten[index] = (buf - bufStart);
 
 }
 

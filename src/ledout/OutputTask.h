@@ -35,7 +35,7 @@ namespace ledout {
 			void taskEntry(void) noexcept;
 
 		private:
-			void convertBuffer(int buffer, int pixels = 300);
+			void convertBuffer(int index, int pixels = 300, void *bufferPtr = nullptr);
 
 		private:
 			// max number of output buffers we can store
