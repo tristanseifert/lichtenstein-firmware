@@ -7,6 +7,7 @@
 #define LOG_MODULE "NET"
 
 #include "Network.h"
+#include "EthMAC.h"
 
 #include "../board/Board.h"
 #include "../clock/Clock.h"
@@ -20,17 +21,20 @@
 // hardware config for EEPROM
 #if HW == HW_MUSTARD
 
+// use the RMII interface
+#define ETH_RMII							1
+
 #endif
 
 
 /// default IP address, if DHCP fails
-static const uint8_t ucIPAddress[ 4 ] = { 192, 168, 1, 200 };
+static const uint8_t ucIPAddress[4] = { 192, 168, 1, 200 };
 /// default netmask, if DHCP fails
-static const uint8_t ucNetMask[ 4 ] = { 255, 255, 255, 0 };
+static const uint8_t ucNetMask[4] = { 255, 255, 255, 0 };
 /// default router address, if DHCP fails
-static const uint8_t ucGatewayAddress[ 4 ] = { 192, 168, 1, 1 };
+static const uint8_t ucGatewayAddress[4] = { 192, 168, 1, 1 };
 /// default DNS server address
-static const uint8_t ucDNSServerAddress[ 4 ] = { 208, 67, 222, 222 };
+static const uint8_t ucDNSServerAddress[4] = { 208, 67, 222, 222 };
 
 /// MAC Address, we need to store this again here
 uint8_t ucMACAddress[6];
@@ -58,11 +62,14 @@ Network *Network::sharedInstance() noexcept {
  */
 Network::Network() {
 	// read the MAC address
-	this->setUpEthParamEEPROM();
+	this->readMACFromEEPROM();
+
+	// configure PLL for clock output to PHY
+	this->setUpClocks();
 
 	// set up the MAC and PHY, respectively
 	this->setUpMAC();
-	this->setUpPHY();
+	this->scanForPHYs();
 
 	// set up the stack
 	this->setUpStack();
@@ -83,31 +90,14 @@ void Network::startNetServices(void) {
  * Closes the TCP/IP stack and turns off the Ethernet link.
  */
 Network::~Network() {
-
+	delete this->mac;
 }
 
 
 /**
- * Sets up the I2C peripheral that's connected to the EEPROM that contains the
- * Ethernet MAC address. This will typically be a 24AA025E48 or similar, with
- * the 6-byte MAC at address $80.
- *
- * This doesn't _have_ to be one of those types of EEPROMs that come from the
- * factory programmed with a MAC, but it's the most convenient option since
- * we don't implement writing to the EEPROM.
+ * Reads the MAC address from the EEPROM.
  */
-void Network::setUpEthParamEEPROM(void) {
-
-
-    // try to probe for the EEPROM and read the MAC
-//    this->_i2cScan();
-    this->probeEthParamEEPROM();
-}
-
-/**
- * Scans the I2C bus to locate the address of the parameter EEPROM.
- */
-void Network::probeEthParamEEPROM(void) {
+void Network::readMACFromEEPROM(void) {
 	Board *b = Board::sharedInstance();
 	b->configEEPROMRead(&this->macAddress, Network::ethParamMACOffset, 6);
 
@@ -121,19 +111,61 @@ void Network::probeEthParamEEPROM(void) {
 				 this->macAddress[4], this->macAddress[5]);
 }
 
+
+
+/**
+ * Configures the internal PLL to output a 25MHz (MII) or 50MHz (RMII) clock
+ * on the MCO pin for the PHY.
+ */
+void Network::setUpClocks(void) {
+	// get the frequencies of clocks
+	RCC_ClocksTypeDef clocks;
+	RCC_GetClocksFreq(&clocks);
+
+	// configure PLL3 for 50MHz
+	RCC_PLL3Config(RCC_PLL3Mul_10);
+
+	// enable PLL3
+	RCC_PLL3Cmd(ENABLE);
+
+	// wait for lock
+	int timeout = 20000;
+
+	while(RCC_GetFlagStatus(RCC_FLAG_PLL3RDY) != SET) {
+		if(timeout-- == 0) {
+			LOG(S_FATAL, "Couldn't get lock on PLL3");
+			break;
+		}
+	}
+
+	// output the clock from the PLL
+#if ETH_RMII
+	// for RMII, output the PLL3 clock
+	RCC_MCOConfig(RCC_MCO_PLL3CLK);
+#else
+	// for MII, just output the external oscillator clock
+	RCC_MCOConfig(RCC_MCO_XT1);
+#endif
+}
+
 /**
  * Sets up the clocks for the Ethernet MAC and the various GPIOs used for the
  * RMII interface.
  */
 void Network::setUpMAC(void) {
+	this->setUpEthernetGPIOs();
+
+	this->mac = new net::EthMAC(this, true); // true for RMII, false for MII
+
+	// set the unicast MAC address
+	this->mac->setMACAddr(this->macAddress);
+}
+
+/**
+ * Sets up the GPIOs used by the Ethernet peripheral.
+ */
+void Network::setUpEthernetGPIOs(void) {
 	GPIO_InitTypeDef gpio;
-
-	// enable clock for the  DMA engines
-	RCC_AHBPeriphClockCmd(RCC_AHBPeriph_DMA1 | RCC_AHBPeriph_DMA1, ENABLE);
-
-	// enable clocks for the ETH peripherals
-	RCC_AHBPeriphClockCmd(RCC_AHBPeriph_ETH_MAC, ENABLE);
-	RCC_AHBPeriphClockCmd(RCC_AHBPeriph_ETH_MAC_Tx | RCC_AHBPeriph_ETH_MAC_Rx, ENABLE);
 
 	// enable clocks for the GPIOs
 	RCC_APB2PeriphClockCmd(RCC_APB2Periph_GPIOA | RCC_APB2Periph_GPIOB | RCC_APB2Periph_GPIOC |
@@ -182,10 +214,64 @@ void Network::setUpMAC(void) {
 }
 
 /**
- * Initializes the correct PHY based on the hardware.
+ * Scans the MDIO bus for any attached PHYs.
  */
-void Network::setUpPHY(void) {
+void Network::scanForPHYs(void) {
+	uint32_t id;
 
+	// scan all PHYs sequentially
+	for(uint16_t phy = 0; phy <= 0x1f; phy++) {
+		// read its id
+		id = this->readPHYId(phy);
+
+		// if the register is mostly 1's, there's no PHY here
+		if((id & 0x0000FFFF) == 0x0000FFFF) {
+//			LOG(S_VERBOSE, "no phy at %d", phy);
+		} else {
+			LOG(S_INFO, "Found PHY at %d: 0x%08x", phy, id);
+		}
+	}
+
+}
+
+/**
+ * Reads the 32-bit composite PHY ID register.
+ */
+uint32_t Network::readPHYId(uint16_t phy) {
+	uint32_t reg = 0;
+	int temp;
+
+	// read the top half of the register (0x02)
+	temp = this->mac->mdioRead(phy, 0x02);
+
+	if(temp < 0) {
+		LOG(S_ERROR, "Couldn't read PHYSID1 from %d", phy);
+		return 0xFFFFFFFF;
+	}
+
+	reg |= ((temp & 0x0000FFFF) << 16);
+
+	// read the lower half of the register (0x03)
+	temp = this->mac->mdioRead(phy, 0x03);
+
+	if(temp < 0) {
+		LOG(S_ERROR, "Couldn't read PHYSID2 from %d", phy);
+		return 0xFFFFFFFF;
+	}
+
+	reg |= (temp & 0x0000FFFF);
+
+	// we're done, return the register
+	return reg;
+}
+
+/**
+ * Determines the type of PHY attached and initializes it.
+ */
+void Network::setUpPHY(uint16_t address) {
+	LOG(S_INFO, "Initializing PHY %d", address);
+
+	// TODO: make this do stuff
 }
 
 

@@ -158,7 +158,7 @@ void OutputTask::taskEntry(void) noexcept {
 		// enable output and output each buffer
 		for(int i = 0; i < numOutputChannels; i++) {
 			// TODO: output the second buffer correctly too ;)
-//			o->outputData(i, this->outputBuffer[0], this->outputBufferBytesWritten[0]);
+			o->outputData(i, this->outputBuffer[0], this->outputBufferBytesWritten[0]);
 
 			this->fpsCounter[i]++;
 		}

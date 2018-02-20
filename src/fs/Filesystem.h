@@ -22,6 +22,9 @@ namespace fs {
 	class SST25VF016;
 }
 
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wpadded"
+
 class Filesystem {
 	friend class fs::FlashHAL;
 	friend class fs::SST25VF016;
@@ -90,5 +93,7 @@ class Filesystem {
 
 		flash_type_t flashType = kFlashTypeUnknown;
 };
+
+#pragma GCC diagnostic pop
 
 #endif /* FS_FILESYSTEM_H_ */

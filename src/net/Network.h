@@ -13,6 +13,10 @@
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wpadded"
 
+namespace net {
+	class EthMAC;
+}
+
 class Network {
 	public:
 		static void init(void);
@@ -24,21 +28,24 @@ class Network {
 		void startNetServices(void);
 
 	private:
+		void setUpClocks(void);
 		void setUpMAC(void);
-		void setUpPHY(void);
+		void setUpEthernetGPIOs(void);
+
+		void scanForPHYs(void);
+		uint32_t readPHYId(uint16_t phy);
+		void setUpPHY(uint16_t address);
 
 		void setUpStack();
+
+		net::EthMAC *mac = nullptr;
 
 	private:
 		static const uint8_t ethParamMACOffset = 0xFA;
 
 		uint8_t macAddress[6];
 
-		void setUpEthParamEEPROM(void);
-		void probeEthParamEEPROM(void);
-		void writeEthParamEEPROM(void);
-
-		void _i2cScan(void);
+		void readMACFromEEPROM(void);
 
 	private:
 		virtual ~Network();
