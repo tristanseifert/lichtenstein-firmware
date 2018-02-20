@@ -7,12 +7,15 @@
 #define LOG_MODULE "NET"
 
 #include "Network.h"
+
+#include "NetworkPrivate.h"
 #include "EthMAC.h"
+#include "EthPHY.h"
 
 #include "../board/Board.h"
 #include "../clock/Clock.h"
 
-#include "LichtensteinApp.h"
+#include <LichtensteinApp.h>
 
 #include "FreeRTOS_IP.h"
 
@@ -90,7 +93,9 @@ void Network::startNetServices(void) {
  * Closes the TCP/IP stack and turns off the Ethernet link.
  */
 Network::~Network() {
+	// deallocating the MAC and PHY will reset them
 	delete this->mac;
+	delete this->phy;
 }
 
 
@@ -220,18 +225,25 @@ void Network::scanForPHYs(void) {
 	uint32_t id;
 
 	// scan all PHYs sequentially
-	for(uint16_t phy = 0; phy <= 0x1f; phy++) {
+	for(uint16_t phyAddr = 0; phyAddr <= 0x1f; phyAddr++) {
 		// read its id
-		id = this->readPHYId(phy);
+		id = this->readPHYId(phyAddr);
 
 		// if the register is mostly 1's, there's no PHY here
 		if((id & 0x0000FFFF) == 0x0000FFFF) {
-//			LOG(S_VERBOSE, "no phy at %d", phy);
-		} else {
-			LOG(S_INFO, "Found PHY at %d: 0x%08x", phy, id);
+//			LOG(S_VERBOSE, "no phy at %d", phyAddr);
+		}
+		// otherwise, we've found a PHY. try to instantiate it
+		else {
+			LOG(S_INFO, "Found PHY at %d: 0x%08x", phyAddr, id);
+
+			this->phy = net::EthPHY::phyForId(this, id, phyAddr, (ETH_RMII ? true : false));
+
+			if(this->phy == nullptr) {
+				LOG(S_FATAL, "Couldn't create PHY with PHYID %08x", id);
+			}
 		}
 	}
-
 }
 
 /**

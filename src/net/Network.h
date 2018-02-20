@@ -15,9 +15,13 @@
 
 namespace net {
 	class EthMAC;
+	class EthPHY;
 }
 
 class Network {
+	friend class net::EthMAC;
+	friend class net::EthPHY;
+
 	public:
 		static void init(void);
 		static Network *sharedInstance(void) noexcept;
@@ -38,7 +42,9 @@ class Network {
 
 		void setUpStack();
 
+	private:
 		net::EthMAC *mac = nullptr;
+		net::EthPHY *phy = nullptr;
 
 	private:
 		static const uint8_t ethParamMACOffset = 0xFA;
