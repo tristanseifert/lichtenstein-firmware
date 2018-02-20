@@ -26,25 +26,20 @@ typedef uint8_t u8_t;
 // compile time switches
 
 // Set generic spiffs debug output call.
-#ifndef SPIFFS_DBG
 #define SPIFFS_DBG(_f, ...) LOG(S_DEBUG, _f, ## __VA_ARGS__)
-#endif
+
 // Set spiffs debug output call for garbage collecting.
-#ifndef SPIFFS_GC_DBG
 #define SPIFFS_GC_DBG(_f, ...) LOG(S_DEBUG, _f, ## __VA_ARGS__)
-#endif
+
 // Set spiffs debug output call for caching.
-#ifndef SPIFFS_CACHE_DBG
-#define SPIFFS_CACHE_DBG(_f, ...) LOG(S_DEBUG, _f, ## __VA_ARGS__)
-#endif
+// #define SPIFFS_CACHE_DBG(_f, ...) LOG(S_DEBUG, _f, ## __VA_ARGS__)
+#define SPIFFS_CACHE_DBG(_f, ...)
+
 // Set spiffs debug output call for system consistency checks.
-#ifndef SPIFFS_CHECK_DBG
 #define SPIFFS_CHECK_DBG(_f, ...) LOG(S_DEBUG, _f, ## __VA_ARGS__)
-#endif
+
 // Set spiffs debug output call for all api invocations.
-#ifndef SPIFFS_API_DBG
-#define SPIFFS_API_DBG(_f, ...) //printf(_f, ## __VA_ARGS__)
-#endif
+#define SPIFFS_API_DBG(_f, ...)
 
 
 
@@ -103,7 +98,7 @@ typedef uint8_t u8_t;
 
 // Enable/disable statistics on caching. Debug/test purpose only.
 #ifndef  SPIFFS_CACHE_STATS
-#define SPIFFS_CACHE_STATS              1
+#define SPIFFS_CACHE_STATS              0
 #endif
 #endif
 
@@ -327,7 +322,7 @@ typedef uint8_t u8_t;
 // in the api. This function will visualize all filesystem using given printf
 // function.
 #ifndef SPIFFS_TEST_VISUALISATION
-#define SPIFFS_TEST_VISUALISATION         1
+#define SPIFFS_TEST_VISUALISATION         0
 #endif
 #if SPIFFS_TEST_VISUALISATION
 #ifndef spiffs_printf

@@ -13,6 +13,9 @@
 // writes larger than this will use DMA
 #define DMA_THRESHOLD			(1024*1024*4)
 
+// set this variable to log invocations to the IO functions
+#define LOG_IO					0
+
 namespace fs {
 
 /**
@@ -72,7 +75,9 @@ void SST25VF016::flashWaitSectorErase(void) {
 int SST25VF016::read(uint32_t address, size_t size, void *dst) {
 	int err;
 
+#if LOG_IO
 	LOG(S_DEBUG, "Reading %u bytes from 0x%06x, buffer at 0x%x", size, address, dst);
+#endif
 
 	// DMA can do a maximum of 64K so limit to that
 	if(size >= 0xFFFF) {
@@ -102,7 +107,7 @@ int SST25VF016::read(uint32_t address, size_t size, void *dst) {
 
 	// if we have more than this threshold, use DMA; otherwise, read in a loop
 	if(size > DMA_THRESHOLD) {
-
+		// TODO: implement DMA
 	} else {
 		uint8_t *outBuf = reinterpret_cast<uint8_t *>(dst);
 
@@ -126,7 +131,9 @@ int SST25VF016::read(uint32_t address, size_t size, void *dst) {
 int SST25VF016::write(uint32_t address, size_t size, void *src) {
 	int err;
 
+#if LOG_IO
 	LOG(S_DEBUG, "Writing %u bytes to 0x%06x, buffer at 0x%x", size, address, src);
+#endif
 
 	// DMA can do a maximum of 64K so limit to that
 	if(size >= 0xFFFF) {
@@ -231,7 +238,10 @@ int SST25VF016::write(uint32_t address, size_t size, void *src) {
  */
 int SST25VF016::erase(uint32_t address, size_t size) {
 	int err;
+
+#if LOG_IO
 	LOG(S_DEBUG, "Erasing %u bytes from 0x%06x", size, address);
+#endif
 
 	// TODO: implement hangling bigger cases than a 4K page
 	if(size != 0x1000) {

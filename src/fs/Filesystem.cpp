@@ -294,11 +294,18 @@ void Filesystem::setUpTask(void) {
  * when requested.
  */
 void Filesystem::taskEntry(void) {
+	int err = 0;
+
 	// read the flash memory's ID and sizing
 	this->identifyFlash();
 
 	// initialize the filesystem here
-//	this->spiffsMount();
+	err = this->spiffsMount();
+
+	if(err != 0) {
+		LOG(S_FATAL, "Couldn't initialize SPIFFS: %d", err);
+		return;
+	}
 
 	// message loop
 	while(1) {
@@ -311,7 +318,7 @@ void Filesystem::taskEntry(void) {
 /**
  * Attempts to mount the filesystem.
  */
-void Filesystem::spiffsMount(bool triedFormat) {
+int Filesystem::spiffsMount(bool triedFormat) {
 	int ret;
 
 	// allocate some buffers
@@ -322,7 +329,7 @@ void Filesystem::spiffsMount(bool triedFormat) {
 	// set up the spiffs config
 	spiffs_config cfg;
 
-	cfg.phys_size = FS_SIZE; // use all spi flash
+	cfg.phys_size = this->flashSize; // use all spi flash
 	cfg.phys_addr = 0x000000; // start spiffs at start of spi flash
 	cfg.phys_erase_block = FS_FLASH_BLOCK_SIZE; // according to datasheet
 	cfg.log_block_size = FS_FLASH_BLOCK_SIZE; // let us not complicate things
@@ -340,7 +347,7 @@ void Filesystem::spiffsMount(bool triedFormat) {
 		// if we just tried to re-format but it failed, error out
 		if(triedFormat) {
 			LOG(S_FATAL, "tried to reformat FS but that didn't work. something is real fucky");
-			return;
+			return ret;
 		}
 
 		LOG(S_WARN, "spiffs mount failure, not a filesystem: formatting");
@@ -350,6 +357,7 @@ void Filesystem::spiffsMount(bool triedFormat) {
 
 		if(ret != SPIFFS_OK) {
 			LOG(S_ERROR, "error formatting: %d", ret);
+			return ret;
 		} else {
 			// if it was successful, attempt to mount it again
 			LOG(S_INFO, "format success, re-mounting...");
@@ -361,6 +369,18 @@ void Filesystem::spiffsMount(bool triedFormat) {
 		SPIFFS_unmount(&this->fs);
 
 		LOG(S_ERROR, "spiffs mount returned %d, aborting");
+		return ret;
+	}
+
+	// get info about the fs
+	uint32_t total, used;
+	ret = SPIFFS_info(&fs, &total, &used);
+
+	if(ret == 0) {
+		LOG(S_INFO, "%d bytes used, %d bytes total", used, total);
+	} else {
+		LOG(S_ERROR, "error getting fs info: %d", ret);
+		return ret;
 	}
 }
 
@@ -379,9 +399,10 @@ void Filesystem::identifyFlash(void) {
 
 		// does the JDEC ID match?
 		if(id == chip->jdecId) {
-			LOG(S_INFO, "Identified flash: %s", chip->name);
+			LOG(S_INFO, "Identified flash: %s (%u bytes)", chip->name, chip->size);
 
 			this->flashType = chip->type;
+			this->flashSize = chip->size;
 			break;
 		}
 	}
@@ -542,20 +563,6 @@ uint8_t Filesystem::spiWrite(uint8_t byte) {
  */
 uint8_t Filesystem::spiRead(void) {
 	return this->spiWrite(0x00);
-
-/*	// send a dummy byte so we can read a byte
-	this->spiWrite(0x00);
-
-	// poll the "RX buffer not empty" flag til it's set
-	while(SPI_I2S_GetFlagStatus(FLASH_SPI_PERIPH, SPI_I2S_FLAG_RXNE) == RESET) {
-
-	}
-
-	uint8_t read = (uint8_t) SPI_I2S_ReceiveData(FLASH_SPI_PERIPH);
-
-	(void) read; // for debugfger
-
-	return read;*/
 }
 
 /**

@@ -79,13 +79,14 @@ class Filesystem {
 		uint8_t *fsFileDescriptors = nullptr;
 		uint8_t *fsCache = nullptr;
 
-		void spiffsMount(bool triedFormat = false);
+		int spiffsMount(bool triedFormat = false);
 
 	private:
 		void identifyFlash(void);
 		uint32_t flashGetJDECId(void);
 
 		fs::FlashHAL *flashHAL = nullptr;
+		size_t flashSize = 0;
 
 		flash_type_t flashType = kFlashTypeUnknown;
 };
