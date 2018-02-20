@@ -48,7 +48,7 @@ void OutputFPSTimerCallback(TimerHandle_t timer) {
 	OutputTask *task = static_cast<OutputTask *>(ctx);
 
 	// ~ do stuff ~
-	LOG(S_INFO, "FPS: %d %d %d %d", task->fpsCounter[0], task->fpsCounter[1], task->fpsCounter[2], task->fpsCounter[3]);
+//	LOG(S_INFO, "FPS: %d %d %d %d", task->fpsCounter[0], task->fpsCounter[1], task->fpsCounter[2], task->fpsCounter[3]);
 
 	// clear the counters back to zero
 	for(int i = 0; i < OutputTask::maxOutputBuffers; i++) {
@@ -158,7 +158,7 @@ void OutputTask::taskEntry(void) noexcept {
 		// enable output and output each buffer
 		for(int i = 0; i < numOutputChannels; i++) {
 			// TODO: output the second buffer correctly too ;)
-			o->outputData(i, this->outputBuffer[0], this->outputBufferBytesWritten[0]);
+//			o->outputData(i, this->outputBuffer[0], this->outputBufferBytesWritten[0]);
 
 			this->fpsCounter[i]++;
 		}

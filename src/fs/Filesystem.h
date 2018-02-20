@@ -8,6 +8,8 @@
 #ifndef FS_FILESYSTEM_H_
 #define FS_FILESYSTEM_H_
 
+#include "FSPrivate.h"
+
 #include "FreeRTOSConfig.h"
 #include "FreeRTOS.h"
 #include "task.h"
@@ -15,7 +17,15 @@
 
 #include "spiffs/src/spiffs.h"
 
+namespace fs {
+	class FlashHAL;
+	class SST25VF016;
+}
+
 class Filesystem {
+	friend class fs::FlashHAL;
+	friend class fs::SST25VF016;
+
 	public:
 		static void init(void);
 		static Filesystem *sharedInstance(void) noexcept;
@@ -30,8 +40,6 @@ class Filesystem {
 
 		void setUpTask(void);
 
-		void readFlashID(void);
-
 		virtual ~Filesystem();
 
 	private:
@@ -43,32 +51,22 @@ class Filesystem {
 		int flashCommand(uint8_t command);
 		int flashCommandWithAddress(uint8_t command, uint32_t address, bool dummyCycle = false);
 
-		void flashWaitTBP(void);
-		void flashWaitSectorErase(void);
-
-		int flashRead(uint32_t address, size_t size, void *dst);
-		int flashWrite(uint32_t address, size_t size, void *src);
-		int flashErase(uint32_t address, size_t size);
-
-		SemaphoreHandle_t flashMutex;
+		SemaphoreHandle_t flashMutex = nullptr;
 
 	private:
-		uint32_t jdecId = 0;
-
 		void spiPulseCS(void);
 
 		void spiWaitIdle(void);
 		void spiWaitTXReady(void);
-		void spiWaitRXReady(void);
 
-		void spiWrite(uint8_t byte);
+		uint8_t spiWrite(uint8_t byte);
 		uint8_t spiRead(void);
 
 	private:
 		friend void _FSTaskTrampoline(void *);
 		void taskEntry(void);
 
-		TaskHandle_t task;
+		TaskHandle_t task = nullptr;
 
 	private:
 		friend s32_t _spiffs_read(u32_t addr, u32_t size, u8_t *dst);
@@ -82,6 +80,14 @@ class Filesystem {
 		uint8_t *fsCache = nullptr;
 
 		void spiffsMount(bool triedFormat = false);
+
+	private:
+		void identifyFlash(void);
+		uint32_t flashGetJDECId(void);
+
+		fs::FlashHAL *flashHAL = nullptr;
+
+		flash_type_t flashType = kFlashTypeUnknown;
 };
 
 #endif /* FS_FILESYSTEM_H_ */

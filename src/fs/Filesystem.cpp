@@ -11,14 +11,34 @@
 #define LOG_MODULE "FS"
 
 #include "Filesystem.h"
+#include "FSPrivate.h"
 
-#include "LichtensteinApp.h"
+#include <LichtensteinApp.h>
 
 #include "FlashCommands.h"
+
+#include "flash/SST25VF016.h"
 
 #include <cstring>
 
 static Filesystem *gFilesystem = nullptr;
+
+/**
+ * List of supported flash chips. This is used to identify the size of the
+ * chip and other features it may or may not support when the filesystem is
+ * first initialized.
+ */
+static const size_t numSupportedChips = 1;
+
+static const flash_info_t supportedChips[numSupportedChips] = {
+	// SST25VF016B, as on the el cheapo Chinese dev board
+	{
+		.jdecId = 0xbf2541,
+		.type = kFlashTypeSST25VF016,
+		.size = (1024 * 1024 * 2),
+		.name = "SST25VF016B"
+	}
+};
 
 /**
  * Any read or write operations that are larger than this threshold will use
@@ -48,7 +68,7 @@ static Filesystem *gFilesystem = nullptr;
 #define FLASH_SPI_PERIPH						SPI1
 #define FLASH_SPI_RCC_CLOCK					RCC_APB2Periph_SPI1
 
-#define FLASH_SPI_BAUD						SPI_BaudRatePrescaler_4 // this could be 1
+#define FLASH_SPI_BAUD						SPI_BaudRatePrescaler_32 // this could be 1
 #define FLASH_SPI_NEEDS_REMAP				0
 #define FLASH_SPI_REMAP						GPIO_Remap_SPI1
 
@@ -145,9 +165,6 @@ Filesystem::Filesystem() {
 
 	// create the filesystem task
 	this->setUpTask();
-
-	// read the flash memory's ID and sizing
-	this->readFlashID();
 }
 
 /**
@@ -221,6 +238,8 @@ void Filesystem::setUpSPI(void) {
 
 	SPI_Init(FLASH_SPI_PERIPH, &spi);
 	SPI_Cmd(FLASH_SPI_PERIPH, ENABLE);
+
+	LOG(S_INFO, "Set up flash SPI");
 }
 
 /**
@@ -237,14 +256,14 @@ void Filesystem::setUpDMA(void) {
 	// set up clocks
 	RCC_AHBPeriphClockCmd(FLASH_RX_DMA_RCC_CLOCK, ENABLE);
 	RCC_AHBPeriphClockCmd(FLASH_TX_DMA_RCC_CLOCK, ENABLE);
-
 }
 
 /**
  * Shuts down the filesystem cleanly.
  */
 Filesystem::~Filesystem() {
-	// TODO Auto-generated destructor stub
+	// delete the HAL
+	delete this->flashHAL;
 }
 
 
@@ -275,6 +294,9 @@ void Filesystem::setUpTask(void) {
  * when requested.
  */
 void Filesystem::taskEntry(void) {
+	// read the flash memory's ID and sizing
+	this->identifyFlash();
+
 	// initialize the filesystem here
 //	this->spiffsMount();
 
@@ -348,17 +370,53 @@ void Filesystem::spiffsMount(bool triedFormat) {
 /**
  * Reads the JDEC ID out of the SPI flash.
  */
-void Filesystem::readFlashID(void) {
+void Filesystem::identifyFlash(void) {
+	// read the jdec id and try to identify the flash
+	uint32_t id = this->flashGetJDECId();
+
+	for(unsigned int i = 0; i < numSupportedChips; i++) {
+		const flash_info_t *chip = &(supportedChips[i]);
+
+		// does the JDEC ID match?
+		if(id == chip->jdecId) {
+			LOG(S_INFO, "Identified flash: %s", chip->name);
+
+			this->flashType = chip->type;
+			break;
+		}
+	}
+
+	if(this->flashType == kFlashTypeUnknown) {
+		LOG(S_FATAL, "Couldn't identify flash with ID 0x%06x", id);
+	}
+
+	// perform per-chip initialization
+	switch(this->flashType) {
+		// is it a SST25VF016?
+		case kFlashTypeSST25VF016:
+			this->flashHAL = new fs::SST25VF016(this);
+			break;
+
+		// hope for the best if it's an unknown flash
+		default: ;
+	}
+}
+/**
+ * Returns the JDEC ID value of the flash chip. This is used to uniquely
+ * identify what chip is populated on the board.
+ */
+uint32_t Filesystem::flashGetJDECId(void) {
 	int err;
+	uint32_t id = 0;
 
 	// start a flash transaction
 	if(this->startFlashTransaction() != 0) {
 		LOG(S_ERROR, "Couldn't start flash transaction for JDEC ID read");
 
-		return;
+		return 0;
 	}
 
-	// send the read command and address
+	// send the JDEC ID command
 	err = this->flashCommand(FLASH_CMD_JDEC_ID);
 
 	if(err != 0) {
@@ -366,26 +424,23 @@ void Filesystem::readFlashID(void) {
 		this->endFlashTransaction();
 
 		LOG(S_ERROR, "Couldn't send JDEC ID command");
-		return;
+		return 0;
 	}
 
-	// clear JDEC ID
-	this->jdecId = 0;
-
 	// read the manufacturer byte
-	this->jdecId |= (this->spiRead() << 16);
-
+	id |= (this->spiRead() << 16);
 	// read the memory type byte
-	this->jdecId |= (this->spiRead() << 8);
-
+	id |= (this->spiRead() << 8);
 	// read the memory size byte
-	this->jdecId |= this->spiRead();
-
-	LOG(S_INFO, "Flash JDEC ID: 0x%08x", this->jdecId);
+	id |= this->spiRead();
 
 	// end the flash transaction we started earlier
 	this->endFlashTransaction();
+
+	return id;
 }
+
+
 
 /**
  * Sets the state of the flash's /CS line. When the active is true, the chip
@@ -413,7 +468,11 @@ int Filesystem::startFlashTransaction(int timeout) {
 
 	if(xSemaphoreTake(this->flashMutex, lockTimeout) == pdTRUE) {
 		// assert /CS
+		taskENTER_CRITICAL();
+
 		this->setFlashCS(true);
+
+		taskEXIT_CRITICAL();
 
 		return 0;
 	} else {
@@ -446,7 +505,6 @@ void Filesystem::spiWaitIdle(void) {
 
     }
 }
-
 /**
  * Waits for the SPI to be ready to send another byte.
  */
@@ -456,37 +514,36 @@ void Filesystem::spiWaitTXReady(void) {
 
     }
 }
-/**
- * Waits for a byte to be available to read out from the SPI.
- */
-void Filesystem::spiWaitRXReady(void) {
-	// TODO: would this be better with interrupts?
-
-/*	// send a dummy byte so we can read a byte
-	this->spiWaitTXReady();
-	this->spiWrite(0x00);
-
-	// poll the "RX buffer not empty" flag til it's set
-    while(SPI_I2S_GetFlagStatus(FLASH_SPI_PERIPH, SPI_I2S_FLAG_RXNE) == RESET) {
-
-    }*/
-}
 
 /**
  * Writes a byte to the SPI peripheral.
  */
-void Filesystem::spiWrite(uint8_t byte) {
+uint8_t Filesystem::spiWrite(uint8_t byte) {
 	// waits for the SPI peripheral to be ready for data
-	this->spiWaitTXReady();
+	 this->spiWaitTXReady();
 
 	// write a byte
 	SPI_I2S_SendData(FLASH_SPI_PERIPH, byte);
+
+	// poll the "RX buffer not empty" flag til it's set
+	while(SPI_I2S_GetFlagStatus(FLASH_SPI_PERIPH, SPI_I2S_FLAG_RXNE) == RESET) {
+
+	}
+
+	uint8_t read = (uint8_t) SPI_I2S_ReceiveData(FLASH_SPI_PERIPH);
+
+	(void) read; // for debugger
+//	LOG(S_DEBUG, "wrote 0x%02x, read 0x%02x", byte, read);
+
+	return read;
 }
 /**
  * Reads a byte from the SPI peripheral.
  */
 uint8_t Filesystem::spiRead(void) {
-	// send a dummy byte so we can read a byte
+	return this->spiWrite(0x00);
+
+/*	// send a dummy byte so we can read a byte
 	this->spiWrite(0x00);
 
 	// poll the "RX buffer not empty" flag til it's set
@@ -498,7 +555,7 @@ uint8_t Filesystem::spiRead(void) {
 
 	(void) read; // for debugfger
 
-	return read;
+	return read;*/
 }
 
 /**
@@ -594,88 +651,16 @@ int Filesystem::flashCommandWithAddress(uint8_t command, uint32_t address, bool 
 	return 0;
 }
 
-/**
- * Waits the amount of time required to write a byte: this is approximately 10µS.
- */
-void Filesystem::flashWaitTBP(void) {
-	// enter critical section
-	taskENTER_CRITICAL();
-
-	// TODO: use a timer peripheral and wait for its interrupt
-	volatile int timeout = 1000;
-
-	while(timeout-- != 0) {
-
-	}
-
-	// exit critical section
-	taskEXIT_CRITICAL();
-}
-
-/**
- * Waits for a sector erase to complete: this is approximately 25ms.
- */
-void Filesystem::flashWaitSectorErase(void) {
-	// TODO: use a timer peripheral with an interrupt instead
-	vTaskDelay(3);
-}
-
 
 
 /**
  * Perform a read operation from the SPI flash.
  */
-int Filesystem::flashRead(uint32_t address, size_t size, void *dst) {
-	int err;
-
-	LOG(S_DEBUG, "Reading %u bytes from 0x%06x, buffer at 0x%x", size, address, dst);
-
-	// DMA can do a maximum of 64K so limit to that
-	if(size >= 0xFFFF) {
-		return -1;
-	}
-
-
-	// start a flash transaction
-	if(this->startFlashTransaction() != 0) {
-		return -1;
-	}
-
-	// send the read command and address
-	err = this->flashCommandWithAddress(FLASH_CMD_READ, address);
+s32_t _spiffs_read(u32_t addr, u32_t size, u8_t *dst) {
+	int err = gFilesystem->flashHAL->read(addr, size, dst);
 
 	if(err != 0) {
-		// end transaction
-		this->endFlashTransaction();
-
-		LOG(S_ERROR, "Couldn't send read command with address 0x%06x", address);
-
-		return err;
-	}
-
-	// if we have more than this threshold, use DMA; otherwise, read in a loop
-	if(size > FLASH_DMA_THRESHOLD) {
-
-	} else {
-		uint8_t *outBuf = reinterpret_cast<uint8_t *>(dst);
-
-		for(unsigned int i = 0; i < size; i++) {
-			// read a byte
-			outBuf[i] = this->spiRead();
-		}
-	}
-
-	// end the flash transaction we started earlier
-	this->endFlashTransaction();
-
-	// if we get down here, everything should be good
-	return 0;
-}
-
-s32_t _spiffs_read(u32_t addr, u32_t size, u8_t *dst) {
-	if(gFilesystem->flashRead(addr, size, dst) != 0) {
 		return SPIFFS_ERR_INTERNAL;
-
 	} else {
 		return SPIFFS_OK;
 	}
@@ -684,110 +669,11 @@ s32_t _spiffs_read(u32_t addr, u32_t size, u8_t *dst) {
 /**
  * Performs a write operation to the SPI flash.
  */
-int Filesystem::flashWrite(uint32_t address, size_t size, void *src) {
-	int err;
-
-	LOG(S_DEBUG, "Writing %u bytes to 0x%06x, buffer at 0x%x", size, address, src);
-
-	// DMA can do a maximum of 64K so limit to that
-	if(size >= 0xFFFF) {
-		return -1;
-	}
-
-	// the address _must_ be even and size must be a multiple of two
-	if((address & 1) || (size & 1)) {
-		return -1;
-	}
-
-
-	// start a flash transaction
-	if(this->startFlashTransaction() != 0) {
-		return -1;
-	}
-
-	// we need to enable writing so send the write enable command
-	err = this->flashCommand(FLASH_CMD_WREN);
-
-	if(err != 0) {
-		this->endFlashTransaction();
-
-		LOG(S_ERROR, "Couldn't send write enable");
-		return err;
-	}
-
-	this->spiPulseCS();
-
-	// send the write command and address
-	err = this->flashCommandWithAddress(FLASH_CMD_WRITE_AIW, address);
-
-	if(err != 0) {
-		this->endFlashTransaction();
-
-		LOG(S_ERROR, "Couldn't send write command with address 0x%06x", address);
-		return err;
-	}
-
-	// write two bytes at a time
-	uint8_t *outBuf = reinterpret_cast<uint8_t *>(src);
-	unsigned int bytesWritten = 0, endOfCommand = 0;
-
-	for(unsigned int i = 0; i < size; i++) {
-		this->spiWrite(outBuf[i]);
-		bytesWritten++; endOfCommand++;
-
-		// have two bytes been written?
-		if(endOfCommand == 2) {
-			// wait for the data to be sent and the peripheral to be idle
-			this->spiWaitIdle();
-
-			// de-assert CS, wait for the write operation to complete
-			this->setFlashCS(false);
-
-			this->flashWaitTBP(); // TODO: implement hardware checking
-
-			// was this the last byte to write?
-			if(bytesWritten != size) {
-				// re-assert /CS, then send another write command
-				this->setFlashCS(true);
-
-				err = this->flashCommand(FLASH_CMD_WRITE_AIW);
-
-				if(err != 0) {
-					this->endFlashTransaction();
-
-					LOG(S_ERROR, "Couldn't send write command with address 0x%06x, wrote %u bytes", address, bytesWritten);
-					return err;
-				}
-			}
-
-			// reset the counter
-			endOfCommand = 0;
-		}
-	}
-
-	// disable writing again
-	this->spiPulseCS();
-
-	err = this->flashCommand(FLASH_CMD_WRDI);
-
-	if(err != 0) {
-		this->endFlashTransaction();
-
-		LOG(S_ERROR, "Couldn't send write disable");
-		return err;
-	}
-
-	// end the flash transaction we started earlier
-	this->endFlashTransaction();
-
-	// if we get down here, everything should be good
-	return 0;
-}
-
 s32_t _spiffs_write(u32_t addr, u32_t size, u8_t *src) {
-	if(gFilesystem->flashWrite(addr, size, src) != 0) {
-		return SPIFFS_ERR_INTERNAL;
+	int err = gFilesystem->flashHAL->write(addr, size, src);
 
+	if(err != 0) {
+		return SPIFFS_ERR_INTERNAL;
 	} else {
 		return SPIFFS_OK;
 	}
@@ -796,70 +682,11 @@ s32_t _spiffs_write(u32_t addr, u32_t size, u8_t *src) {
 /**
  * Erases the memory at the given address.
  */
-int Filesystem::flashErase(uint32_t address, size_t size) {
-	int err;
-	LOG(S_DEBUG, "Erasing %u bytes from 0x%06x", size, address);
-
-	// TODO: implement hangling bigger cases than a 4K page
-	if(size != 0x1000) {
-		LOG(S_ERROR, "Erasing sizes other than 4K is unsupported");
-		return -1;
-	}
-
-
-	// start a flash transaction
-	if(this->startFlashTransaction() != 0) {
-		return -1;
-	}
-
-	// we need to enable writing so send the write enable command
-	err = this->flashCommand(FLASH_CMD_WREN);
-
-	if(err != 0) {
-		this->endFlashTransaction();
-
-		LOG(S_ERROR, "Couldn't send write enable");
-		return err;
-	}
-
-	this->spiPulseCS();
-
-	// send the write command and address
-	err = this->flashCommandWithAddress(FLASH_CMD_ERASE_4K, address);
-
-	if(err != 0) {
-		this->endFlashTransaction();
-
-		LOG(S_ERROR, "Couldn't send erase command with address 0x%06x", address);
-		return err;
-	}
-
-	// wait for the erase to complete
-	this->flashWaitSectorErase();
-
-	// disable writing again
-	this->spiPulseCS();
-
-	err = this->flashCommand(FLASH_CMD_WRDI);
-
-	if(err != 0) {
-		this->endFlashTransaction();
-
-		LOG(S_ERROR, "Couldn't send write disable");
-		return err;
-	}
-
-	// end the flash transaction we started earlier
-	this->endFlashTransaction();
-
-	// if we get down here, everything should be good
-	return 0;
-}
-
 s32_t _spiffs_erase(u32_t addr, u32_t size) {
-	if(gFilesystem->flashErase(addr, size) != 0) {
-		return SPIFFS_ERR_INTERNAL;
+	int err = gFilesystem->flashHAL->erase(addr, size);
 
+	if(err != 0) {
+		return SPIFFS_ERR_INTERNAL;
 	} else {
 		return SPIFFS_OK;
 	}

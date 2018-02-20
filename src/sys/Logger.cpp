@@ -150,7 +150,9 @@ int Logger::log(bool fromISR, logger_severity_t severity, const char *module, co
 	char *bufferCopy = nullptr;
 
 	// lock the buffer
-	xSemaphoreTake(gBufferMutex, portMAX_DELAY);
+	if(!fromISR) {
+		xSemaphoreTake(gBufferMutex, portMAX_DELAY);
+	}
 
 	// Print to the local buffer
 	ret = mini_vsnprintf(gPrintBuffer, gPrintBufferSz, format, ap);
@@ -162,7 +164,9 @@ int Logger::log(bool fromISR, logger_severity_t severity, const char *module, co
 		memcpy(bufferCopy, gPrintBuffer, ret);
 	} else {
 		// if the printf didn't evaluate to anything, exit
-		xSemaphoreGive(gBufferMutex);
+		if(!fromISR) {
+			xSemaphoreGive(gBufferMutex);
+		}
 
 		goto done;
 	}
@@ -172,7 +176,9 @@ int Logger::log(bool fromISR, logger_severity_t severity, const char *module, co
 		BaseType_t queued;
 
 		// release the semaphore to the global buffer
-		xSemaphoreGive(gBufferMutex);
+		if(!fromISR) {
+			xSemaphoreGive(gBufferMutex);
+		}
 
 		// create the message
 		logger_message_t msg;
@@ -198,7 +204,9 @@ int Logger::log(bool fromISR, logger_severity_t severity, const char *module, co
 		vPortFree(bufferCopy);
 
 		// release the semaphore to the global buffer
-		xSemaphoreGive(gBufferMutex);
+		if(!fromISR) {
+			xSemaphoreGive(gBufferMutex);
+		}
 	}
 
 	done: ;
