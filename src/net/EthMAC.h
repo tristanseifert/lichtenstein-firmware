@@ -11,7 +11,12 @@
 #ifndef NET_ETHMAC_H_
 #define NET_ETHMAC_H_
 
+#include <LichtensteinApp.h>
+
+#include <cstddef>
 #include <cstdint>
+
+#include "EthMACPrivate.h"
 
 class Network;
 
@@ -23,6 +28,10 @@ namespace net {
 		public:
 			EthMAC(Network *_net, bool useRMII);
 			virtual ~EthMAC();
+
+		public:
+			// maximum payload size
+			static const size_t MTU = 1500;
 
 		// MAC addresses
 		public:
@@ -36,10 +45,6 @@ namespace net {
 			void setMACAddr(int slot, uint8_t *address, bool enable);
 
 			void setPromiscuousMode(bool enable);
-
-		// PHY management
-		public:
-			uint32_t readPHYId(uint16_t address);
 
 		// management counters
 		public:
@@ -68,12 +73,57 @@ namespace net {
 
 			int mdioSendAddress(uint16_t phy, uint16_t reg, bool write);
 
+		// PHY management
+		public:
+			uint32_t readPHYId(uint16_t address);
+
+		// Reset Handling
 		private:
+			void reset(void);
+
+		// DMA
+		public:
+			void setRxBuffers(void *buffers, size_t numBufs);
+			void setTxBuffers(void *buffers, size_t numBufs);
+
+			bool getRxPacket(uint8_t **data, size_t *length, unsigned int *bufIndex);
+			void releaseRxPacket(int index);
+
+			// TODO: determine if the buffers could be smaller
+			static const size_t rxBufSize = (EthMAC::MTU + 100);
+			static const size_t txBufSize = (EthMAC::MTU + 100);
+
+		private:
+			void setUpDMARegisters(void);
+
+			void resumeTxDMA(void);
+			void resumeRxDMA(void);
+
+			void shutDownDMA(void);
+
+			SemaphoreHandle_t txDescriptorLock = nullptr;
+			size_t numTxDescriptors = 0;
+			mac_tx_dma_descriptor_t *txDescriptors = nullptr;
+
+			SemaphoreHandle_t rxDescriptorLock = nullptr;
+			size_t numRxDescriptors = 0;
+			mac_rx_dma_descriptor_t *rxDescriptors = nullptr;
+
+		// interrupts
+		public:
+			void handleIRQ(void);
+
+			void handleMMCInterrupt(void);
+
+			void handleDMAInterrupt(uint32_t dmasr);
+			void handleDMAErrorInterrupt(uint32_t dmasr);
+
+			void enableEthernetIRQ(void);
+			void disableEthernetIRQ(void);
 
 		// initialization
 		private:
 			void setUpClocks(void);
-
 			void setUpMACRegisters(void);
 
 		private:

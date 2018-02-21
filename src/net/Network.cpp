@@ -67,12 +67,18 @@ Network::Network() {
 	// read the MAC address
 	this->readMACFromEEPROM();
 
+	// create the network task
+	this->setUpTask();
+
 	// configure PLL for clock output to PHY
 	this->setUpClocks();
 
 	// set up the MAC and PHY, respectively
 	this->setUpMAC();
 	this->scanForPHYs();
+
+	// allocate network buffers
+	this->allocBuffers();
 
 	// set up the stack
 	this->setUpStack();
@@ -93,9 +99,22 @@ void Network::startNetServices(void) {
  * Closes the TCP/IP stack and turns off the Ethernet link.
  */
 Network::~Network() {
+	// kill the network task
+	vTaskDelete(this->task);
+	vQueueDelete(this->messageQueue);
+
 	// deallocating the MAC and PHY will reset them
 	delete this->mac;
 	delete this->phy;
+
+	// release the receive/transmit buffers
+	for(size_t i = 0; i < Network::numRxBuffers; i++) {
+		vPortFree(this->rxBuffers[i]);
+	}
+
+	for(size_t i = 0; i < Network::numTxBuffers; i++) {
+		vPortFree(this->txBuffers[i]);
+	}
 }
 
 
@@ -250,9 +269,187 @@ void Network::scanForPHYs(void) {
  * Called by the PHY to indicate a link status change. When we get a link up,
  * attempt to acquire an IP address with DHCP.
  */
-void Network::_phyLinkStateChange(bool isLinkUp) {
-	LOG(S_INFO, "Link status: %d", isLinkUp);
+void Network::_phyLinkStateChange(bool isLinkUp, bool fromISR) {
+//	LOG(S_INFO, "Link status: %d", isLinkUp);
+
+	// prepare a message
+	network_message_t msg;
+	memset(&msg, 0, sizeof(network_message_t));
+
+	msg.type = kNetworkMessageLinkStateChanged;
+	msg.index = (isLinkUp == true) ? 1 : 0;
+
+	// send message
+	if(fromISR) {
+		// TODO: implement ISR-specific message sending
+	} else {
+		if(this->postMessage(&msg) == false) {
+			LOG(S_ERROR, "Couldn't post link state change message");
+		}
+	}
 }
+
+
+
+/**
+ * Allocates the receive and transmit buffers.
+ */
+void Network::allocBuffers(void) {
+	// allocate the receive buffers
+	for(size_t i = 0; i < Network::numRxBuffers; i++) {
+		this->rxBuffers[i] = pvPortMalloc(net::EthMAC::rxBufSize);
+//		LOG(S_INFO, "Allocated rx buffer %u at 0x%x", i, this->rxBuffers[i]);
+	}
+
+	// register the receive buffers to the DMA engine
+	this->mac->setRxBuffers(this->rxBuffers, Network::numRxBuffers);
+
+	// allocate the transmit buffers
+	for(size_t i = 0; i < Network::numTxBuffers; i++) {
+		this->txBuffers[i] = pvPortMalloc(net::EthMAC::txBufSize);
+//		LOG(S_INFO, "Allocated tx buffer %u at 0x%x", i, this->txBuffers[i]);
+	}
+}
+
+
+
+/**
+ * C trampoline to go into the FreeRTOS task.
+ */
+void _NetTaskTrampoline(void *ctx) {
+	(static_cast<Network *>(ctx))->taskEntry();
+}
+
+/**
+ * Sets up the network message handler task.
+ */
+void Network::setUpTask(void) {
+	BaseType_t ok;
+
+	// create the queue
+	this->messageQueue = xQueueCreate(Network::messageQueueSize, sizeof(network_message_t));
+
+	if(this->messageQueue == nullptr) {
+		LOG(S_FATAL, "Couldn't create message queue!");
+	}
+
+	// now, create the task
+	ok = xTaskCreate(_NetTaskTrampoline, "Network", Network::TaskStackSize,
+					 this, Network::TaskPriority, &this->task);
+
+	if(ok != pdTRUE) {
+		LOG(S_FATAL, "Couldn't create task!");
+	}
+}
+
+/**
+ * Posts a message to the network task.
+ *
+ * @return true if the message was posted, false otherwise.
+ *
+ * @note This function is NOT ISR safe!
+ */
+bool Network::postMessage(network_message_t *msg) {
+	BaseType_t ok;
+
+	ok = xQueueSendToBack(this->messageQueue, msg, portMAX_DELAY);
+
+	return (ok == pdTRUE) ? true : false;
+}
+
+/**
+ * Entry point for the network task. Wait for messages to come in on the que,
+ * then act upon them.
+ */
+void Network::taskEntry(void) {
+	BaseType_t ok;
+	network_message_t msg;
+
+	while(1) {
+		// attempt to receive a message
+		ok = xQueueReceive(this->messageQueue, &msg, portMAX_DELAY);
+
+		// parse message
+		if(ok == pdTRUE) {
+			switch(msg.type) {
+				// link state change notification
+				case kNetworkMessageLinkStateChanged: {
+					net_link_speed_t speed = this->phy->getSpeed();
+					bool duplex = this->phy->isFullDuplex();
+
+					LOG(S_DEBUG, "Speed: %u, duplex %u", speed, duplex);
+
+					bool linkUp = (msg.index == 1) ? true : false;
+					LOG(S_INFO, "Link state: %u", linkUp);
+
+					break;
+				}
+
+				// receive interrupt
+				case kNetworkMessageReceiveInterrupt:
+					this->findReceivedFrame();
+					break;
+				// received frame
+				case kNetworkMessageReceivedFrame:
+					this->handleReceivedFrame(&msg);
+					break;
+
+				// transmit interrupt
+				case kNetworkMessageTransmitInterrupt:
+					this->findTransmittedFrame();
+					break;
+
+				// unhandled message
+				default:
+					LOG(S_INFO, "Received unhandled message type %u", msg.type);
+					break;
+			}
+		}
+		// handle receive errors
+		else {
+			LOG(S_ERROR, "Couldn't receive from message queue: %u", ok);
+		}
+	}
+}
+
+/**
+ * After a receive interrupt, attempt to find the frame that was received.
+ */
+void Network::findReceivedFrame(void) {
+	bool found;
+
+	// prepare a message for the received frame
+	network_message_t msg;
+
+	msg.type = kNetworkMessageReceivedFrame;
+
+	// look for a frame
+	found = this->mac->getRxPacket(&msg.data, &msg.packetLength, &msg.index);
+
+	if(found) {
+		this->postMessage(&msg);
+	} else {
+		LOG(S_INFO, "Got RX irq but couldn't find a packet");
+	}
+}
+
+/**
+ * Handles a received frame by forwarding it to the FreeRTOS TCP/IP stack.
+ */
+void Network::handleReceivedFrame(network_message_t *msg) {
+	LOG(S_DEBUG, "Received frame of length %u, index %u", msg->packetLength, msg->index);
+
+	// release the packet (TODO: forward to stack)
+	this->mac->releaseRxPacket(msg->index);
+}
+
+/**
+ * After a transmit interrupt, attempt to find the frame that was sent.
+ */
+void Network::findTransmittedFrame(void) {
+
+}
+
 
 
 /**
@@ -283,4 +480,13 @@ extern "C" void vApplicationIPNetworkEventHook(eIPCallbackEvent_t event) {
 	} else if(event == eNetworkDown) {
 		LOG(S_INFO, "link down");
 	}
+}
+
+
+
+/**
+ * When the Ethernet IRQ is fired, call into the MAC.
+ */
+extern "C" void ETH_IRQHandler(void) {
+	gNetwork->mac->handleIRQ();
 }

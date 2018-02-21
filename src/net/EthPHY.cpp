@@ -92,13 +92,15 @@ void EthPHY::setUpLinkMonitor(void) {
 /**
  * This is called from the link monitor timer; checks the state of the link and
  * checks if it's changed. Call into the network stack if it has.
+ *
+ * By definition, this will never be called from an ISR.
  */
 void EthPHY::checkForLinkStateChange(void) {
 	bool linkState = this->isLinkUp();
 
 	// if it differs, call into the stack
 	if(linkState != this->lastLinkState) {
-		this->net->_phyLinkStateChange(linkState);
+		this->net->_phyLinkStateChange(linkState, false);
 
 		this->lastLinkState = linkState;
 	}

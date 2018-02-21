@@ -33,9 +33,9 @@ DP83848C::DP83848C(Network *_net, EthMAC *_mac, bool _rmii, uint16_t _addr) : Et
 	this->toggleLEDsOnInit();
 
 	// perform a self-test
-	if(this->runBIST() == false) {
+	/*if(this->runBIST() == false) {
 		LOG(S_ERROR, "PHY %d failed BIST", this->addr);
-	}
+	}*/
 
 	// configure registers
 	this->setUpRegisters();
@@ -261,7 +261,7 @@ void DP83848C::reset(void) {
 	uint16_t temp = 0;
 
 	// reset timeout
-	int timeout = 20000;
+	int timeout = 100000;
 
 	// start the transaction
 	if(this->startMDIOTransaction() == false) {
