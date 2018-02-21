@@ -97,6 +97,10 @@ OutputTask::OutputTask() {
  * If the task is still running, kill it, and free the memory.
  */
 OutputTask::~OutputTask() {
+	// destroy FPS timer
+	xTimerStop(this->fpsTimer, portMAX_DELAY);
+	xTimerDelete(this->fpsTimer, portMAX_DELAY);
+
 	// TODO: do this a bit nicer so the task can deallocate its resources
 	vTaskDelete(this->handle);
 

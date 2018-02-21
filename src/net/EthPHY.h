@@ -16,6 +16,8 @@
 
 #include "EthPHYTypes.h"
 
+#include <LichtensteinApp.h>
+
 #include <cstdint>
 
 class Network;
@@ -86,6 +88,31 @@ namespace net {
 			 */
 			virtual void setPowerState(bool powerUp) = 0;
 
+		// link monitor
+		protected:
+			friend void EthPHYLinkMonitorTimerCallback(TimerHandle_t);
+
+			void setUpLinkMonitor(void);
+			void checkForLinkStateChange(void);
+
+		private:
+			bool lastLinkState = false;
+
+			// timer used for the link monitor
+			TimerHandle_t linkMon = nullptr;
+			// how many ms should elapse between link checks
+			static const int linkMonitorTimerInterval = 1500;
+
+		// locking
+		protected:
+			bool startMDIOTransaction(int timeout = -1);
+			bool endMDIOTransaction(void);
+
+			// this semaphore may be used to control access to the MDIO bus
+			SemaphoreHandle_t mdioLock = nullptr;
+
+
+		// MAC, network stack, and other parameters
 		protected:
 			Network *net = nullptr;
 			EthMAC *mac = nullptr;

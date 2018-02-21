@@ -37,8 +37,6 @@ class Network {
 		void setUpEthernetGPIOs(void);
 
 		void scanForPHYs(void);
-		uint32_t readPHYId(uint16_t phy);
-		void setUpPHY(uint16_t address);
 
 		void setUpStack();
 
@@ -46,6 +44,11 @@ class Network {
 		net::EthMAC *mac = nullptr;
 		net::EthPHY *phy = nullptr;
 
+	// callbacks from PHY
+	protected:
+		void _phyLinkStateChange(bool isLinkUp);
+
+	// MAC address reading
 	private:
 		static const uint8_t ethParamMACOffset = 0xFA;
 

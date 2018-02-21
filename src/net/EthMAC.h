@@ -37,6 +37,10 @@ namespace net {
 
 			void setPromiscuousMode(bool enable);
 
+		// PHY management
+		public:
+			uint32_t readPHYId(uint16_t address);
+
 		// management counters
 		public:
 			// TODO: implement accessors for MMC counters
@@ -64,8 +68,9 @@ namespace net {
 
 			int mdioSendAddress(uint16_t phy, uint16_t reg, bool write);
 
-	private:
+		private:
 
+		// initialization
 		private:
 			void setUpClocks(void);
 

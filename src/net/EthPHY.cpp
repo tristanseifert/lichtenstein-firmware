@@ -21,6 +21,9 @@ namespace net {
  * Base constructor: this doesn't do anything.
  */
 EthPHY::EthPHY(Network *_net, EthMAC *_mac, bool _rmii, uint16_t _addr) : net(_net), mac(_mac), rmii(_rmii), addr(_addr)  {
+	// allocate the MDIO lock
+	this->mdioLock = xSemaphoreCreateBinary();
+	xSemaphoreGive(this->mdioLock);
 
 }
 
@@ -28,7 +31,16 @@ EthPHY::EthPHY(Network *_net, EthMAC *_mac, bool _rmii, uint16_t _addr) : net(_n
  * The constructor doesn't do anything either.
  */
 EthPHY::~EthPHY() {
+	// kill the link monitor if needed
+	if(this->linkMon) {
+		xTimerStop(this->linkMon, portMAX_DELAY);
+		xTimerDelete(this->linkMon, portMAX_DELAY);
+	}
 
+	// delete the MDIO lock
+	if(this->mdioLock) {
+		vSemaphoreDelete(this->mdioLock);
+	}
 }
 
 
@@ -49,6 +61,83 @@ EthPHY *EthPHY::phyForId(Network *net, uint32_t id, uint16_t address, bool useRM
 			LOG(S_ERROR, "Couldn't instantiate PHY with ID %08X", id);
 			return nullptr;
 	}
+}
+
+
+
+/**
+ * Callback for the link monitor timer.
+ */
+void EthPHYLinkMonitorTimerCallback(TimerHandle_t timer) {
+	void *ctx = pvTimerGetTimerID(timer);
+	EthPHY *phy = static_cast<EthPHY *>(ctx);
+
+	phy->checkForLinkStateChange();
+}
+
+/**
+ * Sets up the link monitor timer. This polls the link status register and
+ * calls into the network stack when it's changed.
+ */
+void EthPHY::setUpLinkMonitor(void) {
+	// create the FPS timer
+	this->linkMon = xTimerCreate("LinkMon",
+			pdMS_TO_TICKS(EthPHY::linkMonitorTimerInterval), pdTRUE, this,
+			EthPHYLinkMonitorTimerCallback);
+
+	// also start the timer
+	xTimerStart(this->linkMon, portMAX_DELAY);
+}
+
+/**
+ * This is called from the link monitor timer; checks the state of the link and
+ * checks if it's changed. Call into the network stack if it has.
+ */
+void EthPHY::checkForLinkStateChange(void) {
+	bool linkState = this->isLinkUp();
+
+	// if it differs, call into the stack
+	if(linkState != this->lastLinkState) {
+		this->net->_phyLinkStateChange(linkState);
+
+		this->lastLinkState = linkState;
+	}
+}
+
+
+
+/**
+ * Attempts to take the MDIO lock, waiting until the specified timeout is
+ * expired.
+ *
+ * @note This function is _not_ ISR safe.
+ */
+bool EthPHY::startMDIOTransaction(int timeout) {
+	// limit timeout
+	if(timeout == -1) {
+		timeout = portMAX_DELAY;
+	}
+
+	// attempt to take the lock
+	if(xSemaphoreTake(this->mdioLock, timeout) == pdTRUE) {
+		return true;
+	} else {
+		LOG(S_ERROR, "Couldn't take MDIO lock after %d ticks", timeout);
+
+		return false;
+	}
+}
+
+/**
+ * Ends the MDIO transaction.
+ *
+ * @note This function is _not_ ISR safe.
+ */
+bool EthPHY::endMDIOTransaction(void) {
+	xSemaphoreGive(this->mdioLock);
+
+	// nothing can really go wrong here
+	return true;
 }
 
 } /* namespace net */

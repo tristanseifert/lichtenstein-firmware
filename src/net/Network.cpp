@@ -227,7 +227,7 @@ void Network::scanForPHYs(void) {
 	// scan all PHYs sequentially
 	for(uint16_t phyAddr = 0; phyAddr <= 0x1f; phyAddr++) {
 		// read its id
-		id = this->readPHYId(phyAddr);
+		id = this->mac->readPHYId(phyAddr);
 
 		// if the register is mostly 1's, there's no PHY here
 		if((id & 0x0000FFFF) == 0x0000FFFF) {
@@ -247,43 +247,11 @@ void Network::scanForPHYs(void) {
 }
 
 /**
- * Reads the 32-bit composite PHY ID register.
+ * Called by the PHY to indicate a link status change. When we get a link up,
+ * attempt to acquire an IP address with DHCP.
  */
-uint32_t Network::readPHYId(uint16_t phy) {
-	uint32_t reg = 0;
-	int temp;
-
-	// read the top half of the register (0x02)
-	temp = this->mac->mdioRead(phy, 0x02);
-
-	if(temp < 0) {
-		LOG(S_ERROR, "Couldn't read PHYSID1 from %d", phy);
-		return 0xFFFFFFFF;
-	}
-
-	reg |= ((temp & 0x0000FFFF) << 16);
-
-	// read the lower half of the register (0x03)
-	temp = this->mac->mdioRead(phy, 0x03);
-
-	if(temp < 0) {
-		LOG(S_ERROR, "Couldn't read PHYSID2 from %d", phy);
-		return 0xFFFFFFFF;
-	}
-
-	reg |= (temp & 0x0000FFFF);
-
-	// we're done, return the register
-	return reg;
-}
-
-/**
- * Determines the type of PHY attached and initializes it.
- */
-void Network::setUpPHY(uint16_t address) {
-	LOG(S_INFO, "Initializing PHY %d", address);
-
-	// TODO: make this do stuff
+void Network::_phyLinkStateChange(bool isLinkUp) {
+	LOG(S_INFO, "Link status: %d", isLinkUp);
 }
 
 

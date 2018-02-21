@@ -305,6 +305,37 @@ int EthMAC::mdioWrite(uint16_t phy, uint16_t reg, uint16_t value) {
 	return err;
 }
 
+/**
+ * Reads the 32-bit identifier for a PHY by reading the PHYSID register.
+ */
+uint32_t EthMAC::readPHYId(uint16_t address) {
+	uint32_t reg = 0;
+	int temp;
+
+	// read the top half of the register (0x02)
+	temp = this->mdioRead(address, 0x02);
+
+	if(temp < 0) {
+		LOG(S_ERROR, "Couldn't read PHYSID1 from %d", address);
+		return 0xFFFFFFFF;
+	}
+
+	reg |= ((temp & 0x0000FFFF) << 16);
+
+	// read the lower half of the register (0x03)
+	temp = this->mdioRead(address, 0x03);
+
+	if(temp < 0) {
+		LOG(S_ERROR, "Couldn't read PHYSID2 from %d", address);
+		return 0xFFFFFFFF;
+	}
+
+	reg |= (temp & 0x0000FFFF);
+
+	// we're done, return the register
+	return reg;
+}
+
 
 
 /**

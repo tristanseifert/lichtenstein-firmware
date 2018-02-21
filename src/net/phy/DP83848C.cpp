@@ -13,6 +13,13 @@
 
 #include <LichtensteinApp.h>
 
+// set to use interrupts instead of polling for link state
+#define POLL_LINK_STATE						1
+
+#if !POLL_LINK_STATE
+#error "Interrupt-driven link state change notification is not supported"
+#endif
+
 namespace net {
 
 /**
@@ -32,6 +39,11 @@ DP83848C::DP83848C(Network *_net, EthMAC *_mac, bool _rmii, uint16_t _addr) : Et
 
 	// configure registers
 	this->setUpRegisters();
+
+	// set up link state timer
+#if POLL_LINK_STATE
+	this->setUpLinkMonitor();
+#endif
 }
 
 /**
@@ -55,6 +67,11 @@ void DP83848C::setUpRegisters(void) {
 	}
 
 
+	// start the transaction
+	if(this->startMDIOTransaction() == false) {
+		return;
+	}
+
 	// configure BMCR: enable autonegotiation
 	temp = 0;
 
@@ -62,7 +79,7 @@ void DP83848C::setUpRegisters(void) {
 
 	if(this->writeRegister(MDIO_REG_BMCR, temp) == false) {
 		LOG(S_ERROR, "Couldn't write BMCR register");
-		return;
+		goto done;
 	}
 
 
@@ -81,7 +98,7 @@ void DP83848C::setUpRegisters(void) {
 
 	if(this->writeRegister(MDIO_REG_ANAR, temp) == false) {
 		LOG(S_ERROR, "Couldn't write ANAR register");
-		return;
+		goto done;
 	}
 
 
@@ -90,7 +107,7 @@ void DP83848C::setUpRegisters(void) {
 
 	if(this->writeRegister(MDIO_REG_ANER, temp) == false) {
 		LOG(S_ERROR, "Couldn't write ANER register");
-		return;
+		goto done;
 	}
 
 
@@ -99,7 +116,7 @@ void DP83848C::setUpRegisters(void) {
 
 	if(this->writeRegister(MDIO_REG_ANNPTR, temp) == false) {
 		LOG(S_ERROR, "Couldn't write ANNPTR register");
-		return;
+		goto done;
 	}
 
 
@@ -108,7 +125,7 @@ void DP83848C::setUpRegisters(void) {
 
 	if(this->writeRegister(MDIO_REG_PCSR, temp) == false) {
 		LOG(S_ERROR, "Couldn't write PCSR register");
-		return;
+		goto done;
 	}
 
 
@@ -121,7 +138,7 @@ void DP83848C::setUpRegisters(void) {
 
 	if(this->writeRegister(MDIO_REG_10BTSCR, temp) == false) {
 		LOG(S_ERROR, "Couldn't write 10BTSCR register");
-		return;
+		goto done;
 	}
 
 
@@ -135,7 +152,7 @@ void DP83848C::setUpRegisters(void) {
 
 	if(this->writeRegister(MDIO_REG_RBR, temp) == false) {
 		LOG(S_ERROR, "Couldn't write RBR register");
-		return;
+		goto done;
 	}
 
 
@@ -154,8 +171,12 @@ void DP83848C::setUpRegisters(void) {
 
 	if(this->writeRegister(MDIO_REG_PHYCR, temp) == false) {
 		LOG(S_ERROR, "Couldn't write RBR register");
-		return;
+		goto done;
 	}
+
+done: ;
+	// we've finished writing so end the transaction
+	this->endMDIOTransaction();
 }
 
 /**
@@ -164,9 +185,17 @@ void DP83848C::setUpRegisters(void) {
  *
  * This should be used to prevent further initialization steps from taking
  * place if the test fails.
+ *
+ * TODO: fix this. it's broken
  */
 bool DP83848C::runBIST(void) {
 	uint16_t temp;
+	bool pass = false;
+
+	// start the transaction
+	if(this->startMDIOTransaction() == false) {
+		return false;
+	}
 
 	// how long to wait for the BIST bet to become set
 	int timeout = 10000;
@@ -180,14 +209,14 @@ bool DP83848C::runBIST(void) {
 
 	if(this->writeRegister(MDIO_REG_PHYCR, temp) == false) {
 		LOG(S_ERROR, "Couldn't write PHYCR register");
-		return false;
+		goto done;
 	}
 
 	// read the register until either the timeout elapsed or we pass
 	do {
 		if(this->readRegister(MDIO_REG_PHYCR, &temp) == false) {
 			LOG(S_ERROR, "Couldn't read PHYCR register");
-			return false;
+			goto done;
 		}
 
 
@@ -200,16 +229,18 @@ bool DP83848C::runBIST(void) {
 
 			if(this->writeRegister(MDIO_REG_PHYCR, temp) == false) {
 				LOG(S_ERROR, "Couldn't write PHYCR register");
-				return false;
+				goto done;
 			}
 
 			// we passed, yay!
-			return true;
+			pass = true;
 		}
 	} while(timeout--);
 
-	// if we get down here, the timeout expired
-	return false;
+	// end the MDIO transaction
+done: ;
+	this->endMDIOTransaction();
+	return pass;
 }
 
 
@@ -229,29 +260,39 @@ DP83848C::~DP83848C() {
 void DP83848C::reset(void) {
 	uint16_t temp = 0;
 
+	// reset timeout
+	int timeout = 20000;
+
+	// start the transaction
+	if(this->startMDIOTransaction() == false) {
+		return;
+	}
+
 	// Write to BMCR with only the reset bit set
 	if(this->writeRegister(MDIO_REG_BMCR, MDIO_REG_BMCR_RESET) == false) {
 		LOG(S_ERROR, "Couldn't write BMCR register");
+		goto done;
 	}
 
 	// poll the reset bit
-	int timeout = 20000;
-
 	do {
 		// read the BMCR register
 		if(this->readRegister(MDIO_REG_BMCR, &temp) == false) {
-			LOG(S_ERROR, "Couldn't read BMCR register");
-			return;
+			goto done;
 		}
 
 		// if the reset bit is clear, the reset procedure completed
 		if((temp & MDIO_REG_BMCR_RESET) == 0x0000) {
-			return;
+			goto done;
 		}
 	} while(timeout--);
 
 	// if we reach down here, the timeout expired
 	LOG(S_ERROR, "Reset timed out");
+
+done: ;
+	// finish up the transaction
+	this->endMDIOTransaction();
 }
 
 
@@ -261,10 +302,15 @@ void DP83848C::reset(void) {
 void DP83848C::setLoopbackState(bool enabled) {
 	uint16_t bmcr;
 
+	// start the transaction
+	if(this->startMDIOTransaction() == false) {
+		return;
+	}
+
 	// read the BMCR register
 	if(this->readRegister(MDIO_REG_BMCR, &bmcr) == false) {
 		LOG(S_ERROR, "Couldn't read BMCR register");
-		return;
+		goto done;
 	}
 
 
@@ -279,10 +325,12 @@ void DP83848C::setLoopbackState(bool enabled) {
 	// write it back
 	if(this->writeRegister(MDIO_REG_BMCR, bmcr) == false) {
 		LOG(S_ERROR, "Couldn't write BMCR register");
-		return;
+		goto done;
 	}
 
+done: ;
 	// assume success if we get down here
+	this->endMDIOTransaction();
 }
 
 
@@ -302,11 +350,20 @@ bool DP83848C::isLinkUp(void) {
 bool DP83848C::isFullDuplex(void) {
 	uint16_t physts;
 
+	// start the transaction
+	if(this->startMDIOTransaction() == false) {
+		return false;
+	}
+
 	// read the PHYSTS register
 	if(this->readRegister(MDIO_REG_PHYSTS, &physts) == false) {
 		LOG(S_ERROR, "Couldn't read PHYSTS register");
-		return false;
+		goto done;
 	}
+
+done: ;
+	// assume success if we get down here
+	this->endMDIOTransaction();
 
 	// return the state of the full duplex flag
 	return (physts & MDIO_REG_PHYSTS_FULL_DUPLEX) ? true : false;
@@ -318,14 +375,25 @@ bool DP83848C::isFullDuplex(void) {
 net_link_speed_t DP83848C::getSpeed(void) {
 	uint16_t physts;
 
-	// read the PHYSTS register
-	if(this->readRegister(MDIO_REG_PHYSTS, &physts) == false) {
-		LOG(S_ERROR, "Couldn't read PHYSTS register");
+	// start the transaction
+	if(this->startMDIOTransaction() == false) {
 		return kLinkSpeedUnknown;
 	}
 
-	// return the state of the 10Mbps flag
-	return (physts & MDIO_REG_PHYSTS_10MBPS) ? kLinkSpeed10Mbps : kLinkSpeed100Mbps;
+	// read the PHYSTS register
+	if(this->readRegister(MDIO_REG_PHYSTS, &physts) == false) {
+		LOG(S_ERROR, "Couldn't read PHYSTS register");
+
+		// end transaction
+		this->endMDIOTransaction();
+		return kLinkSpeedUnknown;
+	} else {
+		// end transaction
+		this->endMDIOTransaction();
+
+		// return the state of the 10Mbps flag
+		return (physts & MDIO_REG_PHYSTS_10MBPS) ? kLinkSpeed10Mbps : kLinkSpeed100Mbps;
+	}
 }
 
 /**
@@ -335,11 +403,20 @@ net_link_speed_t DP83848C::getSpeed(void) {
 bool DP83848C::isMDIPairSwapped(void) {
 	uint16_t physts;
 
+	// start the transaction
+	if(this->startMDIOTransaction() == false) {
+		return false;
+	}
+
 	// read the PHYSTS register
 	if(this->readRegister(MDIO_REG_PHYSTS, &physts) == false) {
 		LOG(S_ERROR, "Couldn't read PHYSTS register");
-		return false;
+		goto done;
 	}
+
+done: ;
+	// end transaction
+	this->endMDIOTransaction();
 
 	// return the state of the MDI swapped flag
 	return (physts & MDIO_REG_PHYSTS_MDI_SWAPPED) ? true : false;
@@ -354,10 +431,15 @@ bool DP83848C::isMDIPairSwapped(void) {
 void DP83848C::performAutonegotiation(void) {
 	uint16_t bmcr;
 
+	// start the transaction
+	if(this->startMDIOTransaction() == false) {
+		return;
+	}
+
 	// read the BMCR register
 	if(this->readRegister(MDIO_REG_BMCR, &bmcr) == false) {
 		LOG(S_ERROR, "Couldn't read BMCR register");
-		return;
+		goto done;
 	}
 
 
@@ -369,10 +451,13 @@ void DP83848C::performAutonegotiation(void) {
 	// write it back
 	if(this->writeRegister(MDIO_REG_BMCR, bmcr) == false) {
 		LOG(S_ERROR, "Couldn't write BMCR register");
-		return;
+		goto done;
 	}
 
 	// assume success if we get down here
+done: ;
+	// end transaction
+	this->endMDIOTransaction();
 }
 
 /**
@@ -384,10 +469,17 @@ void DP83848C::performAutonegotiation(void) {
 bool DP83848C::setLinkParams(net_link_speed_t speed, bool duplex) {
 	uint16_t bmcr;
 
+	bool linkStateSet = false;
+
+	// start the transaction
+	if(this->startMDIOTransaction() == false) {
+		return false;
+	}
+
 	// read the BMCR register
 	if(this->readRegister(MDIO_REG_BMCR, &bmcr) == false) {
 		LOG(S_ERROR, "Couldn't read BMCR register");
-		return false;
+		goto done;
 	}
 
 
@@ -412,11 +504,17 @@ bool DP83848C::setLinkParams(net_link_speed_t speed, bool duplex) {
 	// write it back
 	if(this->writeRegister(MDIO_REG_BMCR, bmcr) == false) {
 		LOG(S_ERROR, "Couldn't write BMCR register");
-		return false;
+		goto done;
 	}
 
-	// if we get down here, assume the link was set
-	return true;
+	// assume success
+	linkStateSet = true;
+
+done: ;
+	// end transaction
+	this->endMDIOTransaction();
+
+	return linkStateSet;
 }
 
 
@@ -427,10 +525,15 @@ bool DP83848C::setLinkParams(net_link_speed_t speed, bool duplex) {
 void DP83848C::setPowerState(bool powerUp) {
 	uint16_t bmcr;
 
+	// start the transaction
+	if(this->startMDIOTransaction() == false) {
+		return;
+	}
+
 	// read the BMCR register
 	if(this->readRegister(MDIO_REG_BMCR, &bmcr) == false) {
 		LOG(S_ERROR, "Couldn't read BMCR register");
-		return;
+		goto done;
 	}
 
 
@@ -445,10 +548,13 @@ void DP83848C::setPowerState(bool powerUp) {
 	// write it back
 	if(this->writeRegister(MDIO_REG_BMCR, bmcr) == false) {
 		LOG(S_ERROR, "Couldn't write BMCR register");
-		return;
+		goto done;
 	}
 
 	// if we get down here, assume the power status was set
+done: ;
+	// end transaction
+	this->endMDIOTransaction();
 }
 
 
@@ -459,15 +565,21 @@ void DP83848C::setPowerState(bool powerUp) {
 uint16_t DP83848C::readStatus(void) {
 	uint16_t bmsr;
 
-	// attempt to read the BMSR register
-	if(this->readRegister(MDIO_REG_BMSR, &bmsr)) {
-		return bmsr;
-	}
-	// handdle errors
-	else {
-		LOG(S_ERROR, "Error reading BMSR");
+	// start the transaction
+	if(this->startMDIOTransaction() == false) {
 		return 0;
 	}
+
+	// attempt to read the BMSR register
+	if(this->readRegister(MDIO_REG_BMSR, &bmsr) == false) {
+		LOG(S_ERROR, "Error reading BMSR");
+
+		bmsr = 0;
+	}
+
+	// return the value
+	this->endMDIOTransaction();
+	return bmsr;
 }
 
 
@@ -479,6 +591,11 @@ void DP83848C::toggleLEDsOnInit(void) {
 	const int timeout = 2500000;
 	volatile int counter;
 
+	// start the transaction
+	if(this->startMDIOTransaction() == false) {
+		return;
+	}
+
 	// set up the LEDs to be manually controlled
 	temp |= MDIO_REG_LEDCR_SPD_MODE;
 	temp |= MDIO_REG_LEDCR_LINK_MODE;
@@ -486,7 +603,7 @@ void DP83848C::toggleLEDsOnInit(void) {
 
 	if(this->writeRegister(MDIO_REG_LEDCR, temp) == false) {
 		LOG(S_ERROR, "Couldn't write LEDCR");
-		return;
+		goto done;
 	}
 
 	// set the speed LED
@@ -494,7 +611,7 @@ void DP83848C::toggleLEDsOnInit(void) {
 
 	if(this->writeRegister(MDIO_REG_LEDCR, temp) == false) {
 		LOG(S_ERROR, "Couldn't write LEDCR");
-		return;
+		goto done;
 	}
 
 	counter = timeout;
@@ -506,7 +623,7 @@ void DP83848C::toggleLEDsOnInit(void) {
 
 	if(this->writeRegister(MDIO_REG_LEDCR, temp) == false) {
 		LOG(S_ERROR, "Couldn't write LEDCR");
-		return;
+		goto done;
 	}
 
 	counter = timeout;
@@ -518,7 +635,7 @@ void DP83848C::toggleLEDsOnInit(void) {
 
 	if(this->writeRegister(MDIO_REG_LEDCR, temp) == false) {
 		LOG(S_ERROR, "Couldn't write LEDCR");
-		return;
+		goto done;
 	}
 
 	counter = timeout;
@@ -527,8 +644,12 @@ void DP83848C::toggleLEDsOnInit(void) {
 	// enable automatic LED control
 	if(this->writeRegister(MDIO_REG_LEDCR, 0x0000) == false) {
 		LOG(S_ERROR, "Couldn't write LEDCR");
-		return;
+		goto done;
 	}
+
+	// ends the MDIO transaction
+done: ;
+	this->endMDIOTransaction();
 }
 
 
