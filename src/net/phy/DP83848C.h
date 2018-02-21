@@ -45,7 +45,13 @@ namespace net {
 			void setUpRegisters(void);
 			bool runBIST(void);
 
+			void toggleLEDsOnInit(void);
+
+		private:
 			uint16_t readStatus(void);
+
+			bool readRegister(uint16_t reg, uint16_t *value);
+			bool writeRegister(uint16_t reg, uint16_t value);
 	};
 
 } /* namespace net */
