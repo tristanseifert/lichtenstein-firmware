@@ -70,7 +70,8 @@ Network::Network() {
 	// create the network task
 	this->setUpTask();
 
-	// configure PLL for clock output to PHY
+	// configure PLL for clock output to PHY and the GPIOs
+	this->setUpEthernetGPIOs();
 	this->setUpClocks();
 
 	// set up the MAC and PHY, respectively
@@ -142,18 +143,35 @@ void Network::readMACFromEEPROM(void) {
  * on the MCO pin for the PHY.
  */
 void Network::setUpClocks(void) {
+	int timeout;
+
 	// get the frequencies of clocks
 	RCC_ClocksTypeDef clocks;
 	RCC_GetClocksFreq(&clocks);
 
 	// configure PLL3 for 50MHz
+	RCC_PREDIV2Config(RCC_PREDIV2_Div5);
+	RCC_PREDIV1Config(RCC_PREDIV1_Source_PLL2, RCC_PREDIV1_Div5);
+	RCC_PLL2Config(RCC_PLL2Mul_8);
+
 	RCC_PLL3Config(RCC_PLL3Mul_10);
 
-	// enable PLL3
+	// enable PLL2 and wait for lock
+	RCC_PLL2Cmd(ENABLE);
+
+	timeout = 20000;
+
+	while(RCC_GetFlagStatus(RCC_FLAG_PLL2RDY) != SET) {
+		if(timeout-- == 0) {
+			LOG(S_FATAL, "Couldn't get lock on PLL2");
+			break;
+		}
+	}
+
+	// enable PLL3 wait for lock
 	RCC_PLL3Cmd(ENABLE);
 
-	// wait for lock
-	int timeout = 20000;
+	timeout = 20000;
 
 	while(RCC_GetFlagStatus(RCC_FLAG_PLL3RDY) != SET) {
 		if(timeout-- == 0) {
@@ -170,6 +188,10 @@ void Network::setUpClocks(void) {
 	// for MII, just output the external oscillator clock
 	RCC_MCOConfig(RCC_MCO_XT1);
 #endif
+
+
+	RCC_GetClocksFreq(&clocks);
+	LOG(S_INFO, "ADCCLK: %d, HCLK: %d, PCLK1: %d, PCLK2: %d, SYSCLK: %d", clocks.ADCCLK_Frequency, clocks.HCLK_Frequency, clocks.PCLK1_Frequency, clocks.PCLK2_Frequency, clocks.SYSCLK_Frequency);
 }
 
 /**
@@ -177,8 +199,7 @@ void Network::setUpClocks(void) {
  * RMII interface.
  */
 void Network::setUpMAC(void) {
-	this->setUpEthernetGPIOs();
-
+	// initialize the MAC components
 	this->mac = new net::EthMAC(this, true); // true for RMII, false for MII
 
 	// set the unicast MAC address
@@ -196,43 +217,51 @@ void Network::setUpEthernetGPIOs(void) {
 				 RCC_APB2Periph_GPIOD | RCC_APB2Periph_GPIOE, ENABLE);
 	RCC_APB2PeriphClockCmd(RCC_APB2Periph_AFIO, ENABLE);
 
-	// all pins below are 50MHz, AF-PP
+	// all pins below are 50MHz
 	gpio.GPIO_Speed = GPIO_Speed_50MHz;
-	gpio.GPIO_Mode = GPIO_Mode_AF_PP;
 
 	// RMII_REF_CLK (PA1)
+	gpio.GPIO_Mode = GPIO_Mode_IN_FLOATING;
 	gpio.GPIO_Pin = GPIO_Pin_1;
 	GPIO_Init(GPIOA, &gpio);
 
 	// RMII_MDIO (PA2)
+	gpio.GPIO_Mode = GPIO_Mode_AF_PP;
 	gpio.GPIO_Pin = GPIO_Pin_2;
 	GPIO_Init(GPIOA, &gpio);
 
 	// MCO (PA8)
+	gpio.GPIO_Mode = GPIO_Mode_AF_PP;
 	gpio.GPIO_Pin = GPIO_Pin_8;
 	GPIO_Init(GPIOA, &gpio);
 
 	// RMII_TX_EN (PB11)
+	gpio.GPIO_Mode = GPIO_Mode_AF_PP;
 	gpio.GPIO_Pin = GPIO_Pin_11;
 	GPIO_Init(GPIOB, &gpio);
 
 	// RMII_TXD[0,1] (PB12, PB13)
+	gpio.GPIO_Mode = GPIO_Mode_AF_PP;
 	gpio.GPIO_Pin = GPIO_Pin_12 | GPIO_Pin_13;
 	GPIO_Init(GPIOB, &gpio);
 
 	// RMII_MDC (PC1)
+	gpio.GPIO_Mode = GPIO_Mode_AF_PP;
 	gpio.GPIO_Pin = GPIO_Pin_1;
 	GPIO_Init(GPIOC, &gpio);
+
 
 	// RMII_RXD[0,1] (PD9, PD10) remap
 	GPIO_PinRemapConfig(GPIO_Remap_ETH, ENABLE);
 
+//	gpio.GPIO_Mode = GPIO_Mode_IN_FLOATING;
 	gpio.GPIO_Pin = GPIO_Pin_9 | GPIO_Pin_10;
 	GPIO_Init(GPIOD, &gpio);
 
 	// RMII_CRS_DV (PD8) remap
 	GPIO_PinRemapConfig(GPIO_Remap_ETH, ENABLE);
 
+//	gpio.GPIO_Mode = GPIO_Mode_IN_FLOATING;
 	gpio.GPIO_Pin = GPIO_Pin_8;
 	GPIO_Init(GPIOD, &gpio);
 }
@@ -298,17 +327,23 @@ void Network::allocBuffers(void) {
 	// allocate the receive buffers
 	for(size_t i = 0; i < Network::numRxBuffers; i++) {
 		this->rxBuffers[i] = pvPortMalloc(net::EthMAC::rxBufSize);
-//		LOG(S_INFO, "Allocated rx buffer %u at 0x%x", i, this->rxBuffers[i]);
+		memset(this->rxBuffers[i], 0, net::EthMAC::rxBufSize);
+
+		LOG(S_INFO, "Allocated rx buffer %u at 0x%x", i, this->rxBuffers[i]);
 	}
 
 	// register the receive buffers to the DMA engine
 	this->mac->setRxBuffers(this->rxBuffers, Network::numRxBuffers);
 
+
 	// allocate the transmit buffers
 	for(size_t i = 0; i < Network::numTxBuffers; i++) {
 		this->txBuffers[i] = pvPortMalloc(net::EthMAC::txBufSize);
-//		LOG(S_INFO, "Allocated tx buffer %u at 0x%x", i, this->txBuffers[i]);
+		LOG(S_INFO, "Allocated tx buffer %u at 0x%x", i, this->txBuffers[i]);
 	}
+
+	// register the transmit buffers to the DMA engine
+	this->mac->setTxBuffers(this->txBuffers, Network::numTxBuffers);
 }
 
 
@@ -371,6 +406,8 @@ void Network::taskEntry(void) {
 
 		// parse message
 		if(ok == pdTRUE) {
+			this->mac->dbgCheckDMAStatus();
+
 			switch(msg.type) {
 				// link state change notification
 				case kNetworkMessageLinkStateChanged: {

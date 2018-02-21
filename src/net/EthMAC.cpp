@@ -21,6 +21,20 @@ namespace net {
  * Initializes the MAC.
  */
 EthMAC::EthMAC(Network *_net, bool useRMII) : net(_net), rmii(useRMII) {
+	// set up the RMII state
+	if(useRMII) {
+		LOG(S_INFO, "Setting RMII bit in AFIO mapper");
+
+		RCC_AHBPeriphResetCmd(RCC_AHBPeriph_ETH_MAC, ENABLE);
+
+		AFIO->MAPR |= AFIO_MAPR_MII_RMII_SEL;
+
+		RCC_AHBPeriphResetCmd(RCC_AHBPeriph_ETH_MAC, DISABLE);
+	}
+
+	// enable clocks for the MAC and its DMA engine
+	this->setUpClocks();
+
 	// allocate locks
 	this->rxDescriptorLock = xSemaphoreCreateBinary();
 	xSemaphoreGive(this->rxDescriptorLock);
@@ -28,11 +42,8 @@ EthMAC::EthMAC(Network *_net, bool useRMII) : net(_net), rmii(useRMII) {
 	this->txDescriptorLock = xSemaphoreCreateBinary();
 	xSemaphoreGive(this->txDescriptorLock);
 
-	// enable clocks for the MAC and its DMA engine
-	this->setUpClocks();
-
 	// reset the MAC
-	this->reset();
+//	this->reset();
 
 	// set up registers
 	this->setUpMACRegisters();
@@ -75,6 +86,8 @@ void EthMAC::setUpMACRegisters(void) {
 	// initialize the frame filter
 	uint32_t frameFilter = ETH->MACFFR;
 	frameFilter &= 0x7FFFF800; // keep reserved bits
+
+	frameFilter |= ETH_MACFFR_RA; // Pass all (XXX: for debugging)
 
 	frameFilter |= ETH_MACFFR_HPF; // enable hash/perfect filtering
 	frameFilter |= ETH_MACFFR_PAM; // pass all multicast packets
@@ -129,10 +142,10 @@ void EthMAC::setUpMACRegisters(void) {
  */
 void EthMAC::reset(void) {
 	// set the software reset bit
-	ETH->DMABMR |= ETH_DMABMR_SR;
+	ETH->DMABMR = ETH_DMABMR_SR;
 
 	// wait for the bit to clear
-	int timeout = 20000;
+	volatile int timeout = 1000000;
 
 	do {
 		// check that the bit has cleared to zero
@@ -142,7 +155,7 @@ void EthMAC::reset(void) {
 	} while(timeout--);
 
 	// we timed out
-	LOG(S_ERROR, "reset timeout");
+	LOG(S_ERROR, "MAC reset timeout, DMABMR = 0x%08x", ETH->DMABMR);
 }
 
 
@@ -151,16 +164,17 @@ void EthMAC::reset(void) {
  * Sets up the clocks for the Ethernet peripheral.
  */
 void EthMAC::setUpClocks(void) {
-	// enable clock for the  DMA engines
-	RCC_AHBPeriphClockCmd(RCC_AHBPeriph_DMA1 | RCC_AHBPeriph_DMA2, ENABLE);
-
 	// enable clocks for the ETH peripherals
-	RCC_AHBPeriphClockCmd(RCC_AHBPeriph_ETH_MAC, ENABLE);
-	RCC_AHBPeriphClockCmd(RCC_AHBPeriph_ETH_MAC_Tx | RCC_AHBPeriph_ETH_MAC_Rx, ENABLE);
+	RCC_AHBPeriphClockCmd(RCC_AHBPeriph_ETH_MAC | RCC_AHBPeriph_ETH_MAC_Tx | RCC_AHBPeriph_ETH_MAC_Rx, ENABLE);
+
+	// de-assert MAC reset
+//	RCC_AHBPeriphResetCmd(RCC_AHBPeriph_ETH_MAC_Tx, DISABLE);
+//	RCC_AHBPeriphResetCmd(RCC_AHBPeriph_ETH_MAC_Rx, DISABLE);
+//	RCC_AHBPeriphResetCmd(RCC_AHBPeriph_ETH_MAC, DISABLE);
 
 	// reset the MAC
-	RCC_AHBPeriphResetCmd(RCC_AHBPeriph_ETH_MAC, ENABLE);
-	RCC_AHBPeriphResetCmd(RCC_AHBPeriph_ETH_MAC, DISABLE);
+//	RCC_AHBPeriphResetCmd(RCC_AHBPeriph_ETH_MAC, ENABLE);
+//	RCC_AHBPeriphResetCmd(RCC_AHBPeriph_ETH_MAC, DISABLE);
 }
 
 /**
@@ -502,6 +516,7 @@ void EthMAC::setUpDMARegisters(void) {
 
 	ETH->DMABMR = dmabmr;
 
+	LOG(S_DEBUG, "DMABMR: 0x%08x", ETH->DMABMR);
 
 	// configure operation mode
 	uint32_t dmaomr = ETH->DMAOMR;
@@ -511,17 +526,44 @@ void EthMAC::setUpDMARegisters(void) {
 	dmaomr |= ETH_DMAOMR_RSF; // use receive store-and-forward mode
 	dmaomr |= ETH_DMAOMR_TSF; // use transmit store-and-forward mode
 
+//	dmaomr |= ETH_DMAOMR_FTF; // flush TX FIFO
+
 	ETH->DMAOMR = dmaomr;
+
+
+/*	// wait for the flush TX FIFO bit to be cleared
+	int timeout = 100000;
+	bool timeoutExpired = true;
+
+	do {
+		// read register and test the FTF bit
+		dmaomr = ETH->DMAOMR;
+
+		if((dmaomr & ETH_DMAOMR_FTF) == 0) {
+			// bit is clear so the flush is complete
+			timeoutExpired = false;
+			break;
+		}
+	} while(timeout--);
+
+	if(timeoutExpired) {
+		LOG(S_ERROR, "Timeout waiting for ETH_DMAOMR_FTF clear");
+	}*/
 
 
 	// configure interrupts
 	uint32_t dmaier = ETH->DMAIER;
 	dmaier &= 0xFFFE1800; // keep reserved bits
 
+	dmaier |= ETH_DMAIER_NISE; // enable normal interrupts
 	dmaier |= ETH_DMAIER_RIE; // receive interrupt enabled
 	dmaier |= ETH_DMAIER_TIE; // transmit interrupt enabled
 
-	dmaier |= ETH_DMAIER_AISE; // enable all error interrupts
+	dmaier |= ETH_DMAIER_AISE; // enable error interrupts
+	dmaier |= ETH_DMAIER_FBEIE; // fatal bus error enabled
+	dmaier |= ETH_DMAIER_RPSIE; // receive process stopped
+	dmaier |= ETH_DMAIER_TPSIE; // transmit process stopped
+	dmaier |= ETH_DMAIER_RBUIE; // receive buffer unavailable
 
 	ETH->DMAIER = dmaier;
 }
@@ -533,17 +575,17 @@ void EthMAC::shutDownDMA(void) {
 	// disable receive DMA and de-allocate buffers
 	ETH->DMAOMR &= ~(ETH_DMAOMR_SR);
 
-	if(this->rxDescriptors) {
-		vPortFree(this->rxDescriptors);
-		this->rxDescriptors = nullptr;
+	if(this->rxDescriptorsMem) {
+		vPortFree(this->rxDescriptorsMem);
+		this->rxDescriptorsMem = nullptr;
 	}
 
 	// disable transmit DMA and de-allocate buffers
 	ETH->DMAOMR &= ~(ETH_DMAOMR_ST);
 
-	if(this->txDescriptors) {
-		vPortFree(this->txDescriptors);
-		this->txDescriptors = nullptr;
+	if(this->txDescriptorsMem) {
+		vPortFree(this->txDescriptorsMem);
+		this->txDescriptorsMem = nullptr;
 	}
 }
 
@@ -580,18 +622,29 @@ void EthMAC::setRxBuffers(void *buffers, size_t numBufs) {
 	ETH->DMAOMR &= ~(ETH_DMAOMR_SR);
 
 	// deallocate any old RX descriptors
-	if(this->rxDescriptors) {
-		vPortFree(this->rxDescriptors);
-		this->rxDescriptors = nullptr;
+	if(this->rxDescriptorsMem) {
+		vPortFree(this->rxDescriptorsMem);
+		this->rxDescriptorsMem = nullptr;
 	}
 
-	// allocate buffer for the RX descriptors
+	// allocate buffer for the RX descriptors and align it
 	size_t rxDescBufSz = sizeof(mac_rx_dma_descriptor_t) * numBufs;
 
-	this->rxDescriptors = (mac_rx_dma_descriptor_t *) pvPortMalloc(rxDescBufSz);
-//	LOG(S_DEBUG, "Allocated %d RX descriptors at 0x%x", numBufs, this->rxDescriptors);
+	this->rxDescriptorsMem = (mac_rx_dma_descriptor_t *) pvPortMalloc(rxDescBufSz + 16);
+	LOG(S_DEBUG, "Allocated %d RX descriptors at 0x%x", numBufs, this->rxDescriptorsMem);
 
-	memset(this->rxDescriptors, 0, rxDescBufSz);
+	memset(this->rxDescriptorsMem, 0, rxDescBufSz + 16);
+
+	// align the buffer
+	uint32_t address = (uint32_t) this->rxDescriptorsMem;
+	uint32_t lowNybble = address & 0x0000000F;
+
+	if(lowNybble) {
+		address += (0x10 - lowNybble);
+		LOG(S_DEBUG, "Aligned RX buffers to 0x%08x", address);
+	}
+
+	this->rxDescriptors = (mac_rx_dma_descriptor_t *) address;
 
 	// populate each receive descriptor
 	for(unsigned int i = 0; i < numBufs; i++) {
@@ -633,6 +686,8 @@ void EthMAC::setRxBuffers(void *buffers, size_t numBufs) {
 done: ;
 	// release the lock
 	xSemaphoreGive(this->rxDescriptorLock);
+
+	LOG(S_DEBUG, "DMAOMR: 0x%08x", ETH->DMAOMR);
 }
 
 /**
@@ -701,7 +756,111 @@ void EthMAC::releaseRxPacket(int index) {
  * call.
  */
 void EthMAC::setTxBuffers(void *buffers, size_t numBufs) {
+	uint32_t *bufferAddresses = static_cast<uint32_t*>(buffers);
 
+	// take the RX lock
+	if(xSemaphoreTake(this->txDescriptorLock, portMAX_DELAY) != pdTRUE) {
+		LOG(S_ERROR, "Couldn't take txDescriptorLock");
+	}
+
+	// disable receive DMA
+	ETH->DMAOMR &= ~(ETH_DMAOMR_ST);
+
+	// deallocate any old TX descriptors
+	if(this->txDescriptorsMem) {
+		vPortFree(this->txDescriptorsMem);
+		this->txDescriptorsMem = nullptr;
+	}
+
+
+	// allocate buffer for the TX descriptors and align it
+	size_t txDescBufSz = sizeof(mac_tx_dma_descriptor_t) * numBufs;
+
+	this->txDescriptorsMem = pvPortMalloc(txDescBufSz + 16);
+	LOG(S_DEBUG, "Allocated %d TX descriptors at 0x%x", numBufs, this->txDescriptorsMem);
+
+	memset(this->txDescriptorsMem, 0, (txDescBufSz + 16));
+
+	// align the buffer
+	uint32_t address = (uint32_t) this->txDescriptorsMem;
+	uint32_t lowNybble = address & 0x0000000F;
+
+	if(lowNybble) {
+		address += (0x10 - lowNybble);
+		LOG(S_DEBUG, "Aligned TX buffers to 0x%08x", address);
+	}
+
+	this->txDescriptors = (mac_tx_dma_descriptor_t *) address;
+
+
+	// populate each receive descriptor
+	for(unsigned int i = 0; i < numBufs; i++) {
+		mac_tx_dma_descriptor_t *current = &(this->txDescriptors[i]);
+		mac_tx_dma_descriptor_t *next = &(this->txDescriptors[(i + 1)]);
+
+		// configure the size and address
+		current->bufSz = ((EthMAC::rxBufSize) & 0x1FFF);
+		current->buf1Address = bufferAddresses[i];
+
+		// is this the last buffer?
+		if(i == (numBufs - 1)) {
+			// if so, set the end-of-list bit
+			current->status |= TX_STATUS_DMA_END_OF_LIST;
+		}
+		// if not, chain it to the address of the next buffer
+		else {
+			current->status |= TX_STATUS_DMA_NEXT_CHAINED;
+			current->buf2Address = (uint32_t) next;
+		}
+
+		// generate an IRQ when the buffer is transmitted
+		current->status |= TX_STATUS_DMA_IRQ_ON_COMPLETE;
+		// insert IP header and payload checksums
+		current->status |= TX_STATUS_DMA_CIC_ALL;
+
+		// the buffer contains a complete frame
+		current->status |= TX_STATUS_DMA_FIRST_SEGMENT;
+		current->status |= TX_STATUS_DMA_LAST_SEGMENT;
+
+//		LOG(S_DEBUG, "Set up descriptor %u: address 0x%x (next 0x%x) size 0x%x, status 0x%x", i, current->buf1Address, current->buf2Address, current->bufSz, current->status);
+	}
+
+	this->numTxDescriptors = numBufs;
+
+
+	// set the address of the receive descriptors
+	ETH->DMATDLAR = (uint32_t) this->txDescriptors;
+
+	// re-enable transmit DMA and poll for buffers
+	ETH->DMAOMR |= ETH_DMAOMR_ST;
+
+	this->resumeTxDMA();
+
+done: ;
+	// release the lock
+	xSemaphoreGive(this->txDescriptorLock);
+
+	LOG(S_DEBUG, "DMAOMR: 0x%08x", ETH->DMAOMR);
+}
+
+/**
+ * Prints the DMA status.
+ */
+void EthMAC::dbgCheckDMAStatus(void) {
+	// print the address of the TX and RX descriptors
+	LOG(S_DEBUG, "TX descriptors: 0x%08x, RX descriptors: 0x%08x", ETH->DMATDLAR, ETH->DMARDLAR);
+
+	LOG(S_DEBUG, "Current TX descriptor: 0x%08x, current RX descriptors: 0x%08x", ETH->DMACHTDR, ETH->DMACHRDR);
+	LOG(S_DEBUG, "Current TX buf: 0x%08x, current RX buf: 0x%08x", ETH->DMACHTBAR, ETH->DMACHRBAR);
+
+	LOG(S_DEBUG, "Overflow counter: 0x%08x", ETH->DMAMFBOCR);
+
+	// print status register
+	LOG(S_DEBUG, "Status: 0x%08x", ETH->DMASR);
+	LOG(S_DEBUG, "Bus Mode: 0x%08x", ETH->DMABMR);
+	LOG(S_DEBUG, "Op Mode: 0x%08x", ETH->DMAOMR);
+
+	LOG(S_DEBUG, "Interrupts: 0x%08x", ETH->DMAIER);
 }
 
 

@@ -89,6 +89,8 @@ namespace net {
 			bool getRxPacket(uint8_t **data, size_t *length, unsigned int *bufIndex);
 			void releaseRxPacket(int index);
 
+			void dbgCheckDMAStatus(void);
+
 			// TODO: determine if the buffers could be smaller
 			static const size_t rxBufSize = (EthMAC::MTU + 100);
 			static const size_t txBufSize = (EthMAC::MTU + 100);
@@ -103,10 +105,14 @@ namespace net {
 
 			SemaphoreHandle_t txDescriptorLock = nullptr;
 			size_t numTxDescriptors = 0;
+
+			void *txDescriptorsMem = nullptr;
 			mac_tx_dma_descriptor_t *txDescriptors = nullptr;
 
 			SemaphoreHandle_t rxDescriptorLock = nullptr;
 			size_t numRxDescriptors = 0;
+
+			void *rxDescriptorsMem = nullptr;
 			mac_rx_dma_descriptor_t *rxDescriptors = nullptr;
 
 		// interrupts

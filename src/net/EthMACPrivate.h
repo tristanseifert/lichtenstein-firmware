@@ -58,7 +58,7 @@ typedef struct __attribute__((__packed__)) {
 #define TX_STATUS_DMA_NEXT_CHAINED			(1 << 20)
 
 // when set, the MAC captured a time stamp and wrote it to the pointer fields
-#define TX_STATUS_DMA_TIMESTAMP_CAPTURED	(1 << 17)
+#define TX_STATUS_DMA_TIMESTAMP_CAPTURED		(1 << 17)
 // indicates that an IP header error occurred
 #define TX_STATUS_DMA_IP_HEADER_ERR			(1 << 16)
 
