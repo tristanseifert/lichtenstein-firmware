@@ -86,14 +86,12 @@ namespace net {
 			void setRxBuffers(void *buffers, size_t numBufs);
 			void setTxBuffers(void *buffers, size_t numBufs);
 
-			bool getRxPacket(uint8_t **data, size_t *length, unsigned int *bufIndex);
-			void releaseRxPacket(int index);
+//			bool getRxPacket(uint8_t **data, size_t *length, unsigned int *bufIndex);
+			void releaseRxBuffer(int index);
 
 			int freeRxDescriptors(void);
 
 			void dbgCheckDMAStatus(void);
-
-			void resetRxDMAfterPacketLoss(void);
 
 			// TODO: determine if the buffers could be smaller
 			static const size_t rxBufSize = (EthMAC::MTU + 100);
@@ -109,18 +107,23 @@ namespace net {
 
 			void shutDownDMA(void);
 
+			void relinkRxDescriptors(void);
+
 			SemaphoreHandle_t txDescriptorLock = nullptr;
 			size_t numTxDescriptors = 0;
 			void *txDescriptorsMem = nullptr;
 			volatile mac_tx_dma_descriptor_t *txDescriptors = nullptr;
 
-			uint64_t dmaReceivedFrames = 0;
-			uint64_t dmaReceivedFramesDiscarded = 0;
 
 			SemaphoreHandle_t rxDescriptorLock = nullptr;
 			size_t numRxDescriptors = 0;
 			void *rxDescriptorsMem = nullptr;
 			volatile mac_rx_dma_descriptor_t *rxDescriptors = nullptr;
+
+			bool dmaReceivedFramesReady[32];
+
+			uint64_t dmaReceivedFrames = 0;
+			uint64_t dmaReceivedFramesDiscarded = 0;
 
 		// interrupts
 		public:
@@ -135,6 +138,8 @@ namespace net {
 			void enableEthernetIRQ(void);
 			void disableEthernetIRQ(void);
 
+			uint32_t indexOfLastReceivedISR(void);
+			uint32_t indexOfLastTransmittedISR(void);
 			void discardLastRxPacket(void);
 
 		private:

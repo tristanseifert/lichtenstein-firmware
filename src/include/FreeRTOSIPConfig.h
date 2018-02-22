@@ -45,22 +45,20 @@
 // use zero-copy DMA for transmit buffers
 #define ipconfigZERO_COPY_TX_DRIVER 1
 
-// add network event hook
-#define ipconfigUSE_NETWORK_EVENT_HOOK 1
 
 /* Set to 1 to print out debug messages.  If ipconfigHAS_DEBUG_PRINTF is set to
 1 then FreeRTOS_debug_printf should be defined to the function used to print
 out the debugging messages. */
-#define ipconfigHAS_DEBUG_PRINTF	1
+#define ipconfigHAS_DEBUG_PRINTF	0
 #if( ipconfigHAS_DEBUG_PRINTF == 1 )
-	#define FreeRTOS_debug_printf(X)	trace_printf X
+	#define FreeRTOS_debug_printf(X)	 LOG(S_DEBUG, X)
 #endif
 
 /* Set to 1 to print out non debugging messages, for example the output of the
 FreeRTOS_netstat() command, and ping replies.  If ipconfigHAS_PRINTF is set to 1
 then FreeRTOS_printf should be set to the function used to print out the
 messages. */
-#define ipconfigHAS_PRINTF			1
+#define ipconfigHAS_PRINTF			0
 #if( ipconfigHAS_PRINTF == 1 )
 	#define FreeRTOS_printf(X)			trace_printf X
 #endif

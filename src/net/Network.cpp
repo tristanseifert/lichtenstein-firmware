@@ -73,12 +73,6 @@ Network::Network() {
 	// configure PLL for clock output to PHY and the GPIOs
 	this->setUpEthernetGPIOs();
 	this->setUpClocks();
-
-	// set up the stack
-	this->setUpStack();
-
-	// when the stack is set up, start network services
-	this->startNetServices();
 }
 
 /**
@@ -400,6 +394,12 @@ void Network::taskEntry(void) {
 	// allocate network buffers
 	this->allocBuffers();
 
+	// set up the stack
+	this->setUpStack();
+
+	// when the stack is set up, start network services
+	this->startNetServices();
+
 	int messages = 0;
 
 	// start the message loop
@@ -436,8 +436,6 @@ void Network::taskEntry(void) {
 					}
 
 					this->mac->dbgCheckDMAStatus();
-
-					this->mac->resetRxDMAfterPacketLoss();
 					break;
 
 				// unknown interrupt
@@ -445,18 +443,14 @@ void Network::taskEntry(void) {
 					LOG(S_INFO, "Unknown IRQ: 0x%04x", msg.index);
 					break;
 
-				// receive interrupt
-				case kNetworkMessageReceiveInterrupt:
-					this->findReceivedFrame();
-					break;
 				// received frame
 				case kNetworkMessageReceivedFrame:
 					this->handleReceivedFrame(&msg);
 					break;
 
 				// transmit interrupt
-				case kNetworkMessageTransmitInterrupt:
-					this->findTransmittedFrame();
+				case kNetworkMessageTransmittedFrame:
+					this->handleTransmittedFrame(&msg);
 					break;
 
 				// unhandled message
@@ -473,41 +467,23 @@ void Network::taskEntry(void) {
 }
 
 /**
- * After a receive interrupt, attempt to find the frame that was received.
- */
-void Network::findReceivedFrame(void) {
-	bool found;
-
-	// prepare a message for the received frame
-	network_message_t msg;
-
-	msg.type = kNetworkMessageReceivedFrame;
-
-	// look for a frame
-	found = this->mac->getRxPacket(&msg.data, &msg.packetLength, &msg.index);
-
-	if(found) {
-		this->postMessage(&msg);
-	} else {
-		LOG(S_INFO, "Got RX message but couldn't find a packet");
-	}
-}
-
-/**
  * Handles a received frame by forwarding it to the FreeRTOS TCP/IP stack.
  */
 void Network::handleReceivedFrame(network_message_t *msg) {
 //	LOG(S_DEBUG, "Received frame of length %u, index %u", msg->packetLength, msg->index);
 
-	// release the packet (TODO: forward to stack)
-	this->mac->releaseRxPacket(msg->index);
+	// TODO: forward to the IP stack
+
+	// release the packet
+	this->mac->releaseRxBuffer(msg->index);
 }
 
 /**
- * After a transmit interrupt, attempt to find the frame that was sent.
+ * Handles a transmitted frame by releasing the transmit buffer back to the
+ * network stack.
  */
-void Network::findTransmittedFrame(void) {
-
+void Network::handleTransmittedFrame(network_message_t *msg) {
+	// TODO: do stuff
 }
 
 

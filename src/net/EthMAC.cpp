@@ -662,6 +662,9 @@ void EthMAC::setRxBuffers(void *buffers, size_t numBufs) {
 		volatile mac_rx_dma_descriptor_t *current = &(this->rxDescriptors[i]);
 		volatile mac_rx_dma_descriptor_t *next = &(this->rxDescriptors[(i + 1)]);
 
+		// mark this buffer as ready
+		this->dmaReceivedFramesReady[i] = true;
+
 		// configure the size and address
 		current->bufSz = ((EthMAC::rxBufSize) & 0x1FFF);
 		current->buf1Address = bufferAddresses[i];
@@ -706,7 +709,7 @@ void EthMAC::setRxBuffers(void *buffers, size_t numBufs) {
  * and returns its information. If no frames have been received, false is
  * returned.
  */
-bool EthMAC::getRxPacket(uint8_t **data, size_t *length, unsigned int *bufIndex) {
+/*bool EthMAC::getRxPacket(uint8_t **data, size_t *length, unsigned int *bufIndex) {
 	bool found = false;
 	uint32_t status, size;
 
@@ -742,55 +745,102 @@ done: ;
 	xSemaphoreGive(this->rxDescriptorLock);
 
 	return found;
-}
+}*/
 
 /**
  * Releases a received packet (and its buffer) back to the DMA engine so that
  * it may use it again for new received packets.
  */
-void EthMAC::releaseRxPacket(int index) {
+void EthMAC::releaseRxBuffer(int index) {
 	// take the RX lock
 	if(xSemaphoreTake(this->rxDescriptorLock, portMAX_DELAY) != pdTRUE) {
 		LOG(S_ERROR, "Couldn't take rxDescriptorLock");
 		return;
 	}
 
-	// set the OWN bit so the DMA engine owns the buffer
-	this->rxDescriptors[index].status = 0;
-	this->rxDescriptors[index].status |= RX_STATUS_DMA_OWNS_BUFFER;
-
-	// clear the "used" flag
-	this->rxDescriptors[index].bufSz &= ~(RX_BUFSZ_BUFFER_REQUESTED);
-
-	// force the DMA engine to poll the descriptors again
-	/*if(this->dmaReceiveStopped) {
-		LOG(S_WARN, "DMA receive was stopped... probably lost packets");
-		this->dmaReceiveStopped = false;
-
-		// set the receive process enable bit again
-		ETH->DMAOMR &= ~(ETH_DMAOMR_SR);
-
-		ETH->DMARDLAR = (uint32_t) this->rxDescriptors;
-
-		ETH->DMAOMR |= ETH_DMAOMR_SR;
-
-		// re-enable receive interrupts
-		uint32_t dmaier = ETH->DMAIER;
-		dmaier &= 0xFFFE1800; // keep reserved bits
-
-		dmaier |= ETH_DMAIER_NISE; // enable normal interrupts
-		dmaier |= ETH_DMAIER_RIE; // receive interrupt enabled
-		dmaier |= ETH_DMAIER_TIE; // transmit interrupt enabled
-
-		ETH->DMAIER = dmaier;
-	}*/
-
-	this->resumeRxDMA();
+	// re-link the descriptors
+	this->dmaReceivedFramesReady[index] = true;
+	this->relinkRxDescriptors();
 
 	// release the lock again
 	xSemaphoreGive(this->rxDescriptorLock);
 
 //	LOG(S_DEBUG, "Released RX buffer %u", index);
+}
+
+/**
+ * Re-creates the linkeages between the descriptors.
+ */
+void EthMAC::relinkRxDescriptors(void) {
+	uint32_t start = 0;
+	int freeDescriptors = 0;
+
+	for(size_t i = 0; i < this->numRxDescriptors; i++) {
+		volatile mac_rx_dma_descriptor_t *desc = &(this->rxDescriptors[i]);
+
+		// is this descriptor available?
+		if(this->dmaReceivedFramesReady[i]) {
+			start = (uint32_t) desc;
+
+			// increment the counter
+			freeDescriptors++;
+
+			// set the OWN bit so the DMA engine owns the buffer
+			desc->status = 0;
+			desc->status |= RX_STATUS_DMA_OWNS_BUFFER;
+
+			// is this the last buffer?
+			if(i == (this->numRxDescriptors - 1)) {
+				// set end-of-list bit
+				desc->bufSz |= RX_BUFSZ_END_OF_LIST;
+			}
+			// if not, chain it to the address of the next buffer
+			else {
+				uint32_t next = 0;
+
+				// find the next free buffer
+				for(size_t j = (i + 1); j < this->numRxDescriptors; j++) {
+					// is this one free?
+					if(this->dmaReceivedFramesReady[j]) {
+						// if so, set its address
+						next = (uint32_t) &(this->rxDescriptors[j]);
+						break;
+					}
+				}
+
+				// did we find a free next buffer?
+				if(next) {
+					// chain the buffer
+					desc->bufSz |= RX_BUFSZ_NEXT_CHAINED;
+					desc->buf2Address = (uint32_t) next;
+				}
+				// we couldn't find any buffers that were free
+				else {
+					desc->bufSz |= RX_BUFSZ_END_OF_LIST;
+				}
+			}
+		}
+	}
+
+	// if we have less than 4 descriptors, also send a pause frame
+	if(freeDescriptors < 4) {
+		ETH->MACFCR |= ETH_MACFCR_FCBBPA;
+	}
+
+	// if no descriptors were available, send PAUSE frame and disable reception
+	if(start == 0) {
+		// send pause frame
+		ETH->MACFCR |= ETH_MACFCR_FCBBPA;
+
+		// stop reception
+		ETH->DMAOMR &= ~(ETH_DMAOMR_SR);
+	} else {
+		// set the address, start reception and re-read descriptors
+		ETH->DMARDLAR = start;
+		ETH->DMAOMR |= ETH_DMAOMR_SR;
+
+		ETH->DMARPDR = ETH_DMARPDR_RPD;
+	}
 }
 
 /**
@@ -800,8 +850,14 @@ void EthMAC::releaseRxPacket(int index) {
 int EthMAC::freeRxDescriptors(void) {
 	int free = 0;
 
-	for(size_t i = 0; i < this->numRxDescriptors; i++) {
+/*	for(size_t i = 0; i < this->numRxDescriptors; i++) {
 		if(this->rxDescriptors[i].status & RX_STATUS_DMA_OWNS_BUFFER) {
+			free++;
+		}
+	}
+*/
+	for(size_t i = 0; i < this->numRxDescriptors; i++) {
+		if(this->dmaReceivedFramesReady[i]) {
 			free++;
 		}
 	}
@@ -919,42 +975,6 @@ void EthMAC::dbgCheckDMAStatus(void) {
 	LOG(S_DEBUG, "Received frames: %d, discarded %d", this->dmaReceivedFrames, this->dmaReceivedFramesDiscarded);
 }
 
-/**
- * Forcefully re-starts the receive DMA after packet loss.
- */
-void EthMAC::resetRxDMAfterPacketLoss(void) {
-	// do nothing if DMA is still ongoing
-	if(this->dmaReceiveStopped == false) return;
-
-	// acknowledge the interrupts that were generated
-	ETH->DMASR |= ETH_DMASR_RBUS;
-	ETH->DMASR |= ETH_DMASR_RPSS;
-
-	// generate a pause frame
-	ETH->MACFCR |= ETH_MACFCR_FCBBPA;
-
-//	LOG(S_WARN, "DMA receive was stopped... probably lost packets");
-	this->dmaReceiveStopped = false;
-
-	// set the receive process enable bit again
-	ETH->DMAOMR &= ~(ETH_DMAOMR_SR);
-
-	ETH->DMARDLAR = (uint32_t) this->rxDescriptors;
-	ETH->DMARPDR = ETH_DMARPDR_RPD;
-
-	ETH->DMAOMR |= ETH_DMAOMR_SR;
-
-	// re-enable receive interrupts
-	uint32_t dmaier = ETH->DMAIER;
-	dmaier &= 0xFFFE1800; // keep reserved bits
-
-	dmaier |= ETH_DMAIER_NISE; // enable normal interrupts
-	dmaier |= ETH_DMAIER_RIE; // receive interrupt enabled
-	dmaier |= ETH_DMAIER_TIE; // transmit interrupt enabled
-
-	ETH->DMAIER = dmaier;
-}
-
 
 
 /**
@@ -991,12 +1011,7 @@ void EthMAC::disableEthernetIRQ(void) {
  * Handles an interrupt from the Ethernet peripheral.
  */
 void EthMAC::handleIRQ(void) {
-	static unsigned int invocations = 0;
-
 	uint32_t dmasr = ETH->DMASR;
-
-	invocations++;
-	(void) invocations;
 
 	// was the interrupt caused due to an MMC interrupt?
 	if(dmasr & ETH_DMASR_MMCS) {
@@ -1036,7 +1051,6 @@ void EthMAC::handleDMAInterrupt(uint32_t dmasr) {
 
 	// set up a message, in case we need to pass it to the network stack
 	network_message_t msg;
-//	memset(&msg, 0, sizeof(network_message_t));
 
 	// acknowledge all interrupts
 	ETH->DMASR |= 0xFFFFFFFF;
@@ -1044,8 +1058,16 @@ void EthMAC::handleDMAInterrupt(uint32_t dmasr) {
 
 	// was this a receive interrupt?
 	if(dmasr & ETH_DMASR_RS) {
+		uint32_t index = this->indexOfLastReceivedISR();
+		uint32_t status = this->rxDescriptors[index].status;
+
 		// fill in the message and send it
-		msg.type = kNetworkMessageReceiveInterrupt;
+		msg.type = kNetworkMessageReceivedFrame;
+		msg.index = index;
+		msg.data = (uint8_t *) this->rxDescriptors[index].buf1Address;
+		msg.packetLength = (status & RX_STATUS_DMA_FRAME_LENGTH_MASK) >> RX_STATUS_DMA_FRAME_LENGTH_SHIFT;
+
+		// send the message
 		ok = xQueueSendToBackFromISR(this->net->messageQueue, &msg, &woke);
 
 		if(ok != pdPASS) {
@@ -1054,17 +1076,13 @@ void EthMAC::handleDMAInterrupt(uint32_t dmasr) {
 		} else {
 			this->dmaReceivedFrames++;
 
-			// if there's less than 4 buffers free, send a pause frame
-			if(this->freeRxDescriptors() < 4) {
-				  ETH->MACFCR |= ETH_MACFCR_FCBBPA;
-			}
+			// mark the frame as used
+			this->dmaReceivedFramesReady[index] = false;
+			this->relinkRxDescriptors();
 		}
 
 		// acknowledge interrupt
 		ETH->DMASR |= ETH_DMASR_RS;
-
-		// send a pause frame
-		ETH->MACFCR |= ETH_MACFCR_FCBBPA;
 	}
 	// was this an early receive interrupt?
 	else if(dmasr & ETH_DMASR_ERS) {
@@ -1077,8 +1095,9 @@ void EthMAC::handleDMAInterrupt(uint32_t dmasr) {
 	// was this a transmit interrupt?
 	else if(dmasr & ETH_DMASR_TS) {
 		// fill in the message and send it
-		msg.type = kNetworkMessageTransmitInterrupt;
-		ok = xQueueSendToBackFromISR(this->net->messageQueue, &msg, &woke);
+		// TODO: generate a useful message here
+
+//		ok = xQueueSendToBackFromISR(this->net->messageQueue, &msg, &woke);
 
 		// acknowledge interrupt
 		ETH->DMASR |= ETH_DMASR_TS;
@@ -1109,7 +1128,6 @@ void EthMAC::handleDMAErrorInterrupt(uint32_t dmasr) {
 
 	// set up a message, in case we need to pass it to the network stack
 	network_message_t msg;
-//	memset(&msg, 0, sizeof(network_message_t));
 
 	// are the receive buffers unavailable?
 	if(err & ETH_DMASR_RBUS) {
@@ -1123,7 +1141,7 @@ void EthMAC::handleDMAErrorInterrupt(uint32_t dmasr) {
 
 		if(ok != pdPASS) {
 			this->discardLastRxPacket();
-			LOG_ISR(S_ERROR, "Couldn't write network task message: queue full");
+//			LOG_ISR(S_ERROR, "Couldn't write network task message: queue full");
 		}
 
 		// clear interrupt
@@ -1141,7 +1159,7 @@ void EthMAC::handleDMAErrorInterrupt(uint32_t dmasr) {
 
 		if(ok != pdPASS) {
 			this->discardLastRxPacket();
-			LOG_ISR(S_ERROR, "Couldn't write network task message: queue full");
+//			LOG_ISR(S_ERROR, "Couldn't write network task message: queue full");
 		}
 
 		// clear interrupt
@@ -1174,21 +1192,63 @@ void EthMAC::handleDMAErrorInterrupt(uint32_t dmasr) {
 }
 
 /**
+ * Returns the index of the descriptor of the last received packet.
+ *
+ * @note This really only works right from an ISR.
+ */
+uint32_t EthMAC::indexOfLastReceivedISR(void) {
+	// get the difference between the current and start
+	uint32_t current = ETH->DMACHRDR;
+	uint32_t base = (uint32_t) this->rxDescriptors;
+
+	uint32_t difference = current - base;
+	uint32_t currentBuf = difference / sizeof(mac_rx_dma_descriptor_t);
+
+	// decrement it by one to get the previous (i.e. the just received) buffer
+	if(currentBuf > 0) {
+		currentBuf = (currentBuf - 1);
+	} else {
+		currentBuf = (this->numRxDescriptors - 1);
+	}
+
+	return currentBuf;
+}
+
+/**
+ * Returns the index of the descriptor of the last transmitted packet.
+ *
+ * @note This really only works right from an ISR.
+ */
+uint32_t EthMAC::indexOfLastTransmittedISR(void) {
+	// get the difference between the current and start
+	uint32_t current = ETH->DMACHTDR;
+	uint32_t base = (uint32_t) this->txDescriptors;
+
+	uint32_t difference = current - base;
+	uint32_t currentBuf = difference / sizeof(mac_tx_dma_descriptor_t);
+
+	// decrement it by one to get the previous (i.e. the just sent) buffer
+	if(currentBuf > 0) {
+		currentBuf = (currentBuf - 1);
+	} else {
+		currentBuf = (this->numTxDescriptors - 1);
+	}
+
+	return currentBuf;
+}
+
+/**
  * Discards the last received packet.
  */
 void EthMAC::discardLastRxPacket(void) {
-	mac_rx_dma_descriptor_t *desc = (mac_rx_dma_descriptor_t *) ETH->DMACHRDR;
+	// mark the last received frame as already handled
+	uint32_t index = this->indexOfLastReceivedISR();
+	this->dmaReceivedFramesReady[index] = true;
 
-	desc->status = 0;
-	desc->status |= RX_STATUS_DMA_OWNS_BUFFER;
+	// re-create descriptor linkage
+	this->relinkRxDescriptors();
 
-	// clear the "used" flag (it shouldn't be set but it's good measure)
-	desc->bufSz &= ~(RX_BUFSZ_BUFFER_REQUESTED);
-
-	// force the DMA engine to rescan descriptors
-	ETH->DMARPDR = ETH_DMARPDR_RPD;
-
-	// increment counter
+	// increment dropped frames counter
 	this->dmaReceivedFramesDiscarded++;
 }
 
