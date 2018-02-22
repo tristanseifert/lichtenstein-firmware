@@ -578,13 +578,8 @@ void EthMAC::shutDownDMA(void) {
 		this->rxDescriptorsMem = nullptr;
 	}
 
-	// disable transmit DMA and de-allocate buffers
+	// disable transmit DMA
 	ETH->DMAOMR &= ~(ETH_DMAOMR_ST);
-
-	if(this->txDescriptorsMem) {
-		vPortFree(this->txDescriptorsMem);
-		this->txDescriptorsMem = nullptr;
-	}
 }
 
 /**
@@ -905,10 +900,12 @@ void EthMAC::transmitTaskEntry(void) {
 			continue;
 		}
 
+
 		// notify the stack that the previous frame sent
 		if(bufferLastTx != nullptr) {
-
+			// TODO: notification
 		}
+
 
 		// attempt to get a write request
 		ok = xQueueReceive(this->transmitQueue, &req, portMAX_DELAY);
@@ -922,9 +919,33 @@ void EthMAC::transmitTaskEntry(void) {
 		bufferLastTx = req.data;
 		userDataLastTx = req.userData;
 
-		// create descriptor
 
-		// start DMA write
+		// get the lock on the tx descriptor
+		xSemaphoreTake(this->txDescriptorLock, portMAX_DELAY);
+
+		// create descriptor
+		memset(&this->txDescriptor, 0, sizeof(mac_tx_dma_descriptor_t));
+
+		this->txDescriptor.status |= TX_STATUS_DMA_OWNS_BUFFER; // start DMA tx
+		this->txDescriptor.status |= TX_STATUS_DMA_IRQ_ON_COMPLETE; // IRQ on complete
+		this->txDescriptor.status |= TX_STATUS_DMA_LAST_SEGMENT; // last segment
+		this->txDescriptor.status |= TX_STATUS_DMA_FIRST_SEGMENT; // first segment
+
+		this->txDescriptor.status |= TX_STATUS_DMA_CIC_ALL; // insert all checksums
+
+		// set the buffer and length we wish to send
+		this->txDescriptor.bufSz = (uint32_t) req.length & 0x1FFF;
+		this->txDescriptor.buf1Address = (uint32_t) req.data;
+
+		// we're done writing to the descriptor, so release the lock
+		xSemaphoreGive(this->txDescriptorLock);
+
+
+		// set location of the descriptor (this starts DMA)
+		ETH->DMARDLAT = (uint32_t) &(this->txDescriptor);
+
+		ETH->DMAOMR |= ETH_DMAOMR_ST;
+		ETH->DMATPDR = ETH_DMATPDR_TPD;
 	}
 }
 
@@ -1170,29 +1191,6 @@ uint32_t EthMAC::indexOfLastReceivedISR(void) {
 		currentBuf = (currentBuf - 1);
 	} else {
 		currentBuf = (this->numRxDescriptors - 1);
-	}
-
-	return currentBuf;
-}
-
-/**
- * Returns the index of the descriptor of the last transmitted packet.
- *
- * @note This really only works right from an ISR.
- */
-uint32_t EthMAC::indexOfLastTransmittedISR(void) {
-	// get the difference between the current and start
-	uint32_t current = ETH->DMACHTDR;
-	uint32_t base = (uint32_t) this->txDescriptors;
-
-	uint32_t difference = current - base;
-	uint32_t currentBuf = difference / sizeof(mac_tx_dma_descriptor_t);
-
-	// decrement it by one to get the previous (i.e. the just sent) buffer
-	if(currentBuf > 0) {
-		currentBuf = (currentBuf - 1);
-	} else {
-		currentBuf = (this->numTxDescriptors - 1);
 	}
 
 	return currentBuf;

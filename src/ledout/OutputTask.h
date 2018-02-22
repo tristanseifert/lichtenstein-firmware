@@ -8,6 +8,8 @@
 #ifndef LEDOUT_OUTPUTTASK_H_
 #define LEDOUT_OUTPUTTASK_H_
 
+#include <cstddef>
+
 #include "FreeRTOSConfig.h"
 #include "FreeRTOS.h"
 #include "task.h"
@@ -53,6 +55,11 @@ namespace ledout {
 
 		private:
 			friend void OutputFPSTimerCallback(TimerHandle_t);
+
+			// size of the stack
+			static const size_t TaskStackSize = 200;
+			// output task priority
+			static const size_t TaskPriority = 3;
 
 			TaskHandle_t handle;
 			TimerHandle_t fpsTimer;

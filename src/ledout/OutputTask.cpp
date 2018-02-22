@@ -22,10 +22,6 @@
 
 #define ADDR_BITBAND(base, bit)				(uint32_t *) (0x22000000 + ((((uint32_t) base) - 0x20000000) * 32) + (bit * 4))
 
-// configuration
-#define LEDOUT_TASK_STACK_SZ 				150
-#define LEDOUT_TASK_PRIORITY					(3)
-
 // size of the output buffers
 static const int numOutputChannels = 2;
 static const int ledsPerChannel = 300;
@@ -72,8 +68,8 @@ void _OutputTaskTrampoline(void *ctx) {
 OutputTask::OutputTask() {
 	BaseType_t ok;
 
-	ok = xTaskCreate(_OutputTaskTrampoline, "LEDOut", LEDOUT_TASK_STACK_SZ,
-					 this, LEDOUT_TASK_PRIORITY, &this->handle);
+	ok = xTaskCreate(_OutputTaskTrampoline, "LEDOut", OutputTask::TaskStackSize,
+					 this, OutputTask::TaskPriority, &this->handle);
 
 	if(ok != pdPASS) {
 		LOG(S_ERROR, "Couldn't create LEDOut task!");

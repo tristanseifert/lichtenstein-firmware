@@ -81,30 +81,38 @@ namespace net {
 		private:
 			void reset(void);
 
-		// transmit task
+		// transmitting packets
 		private:
 			friend void _MACTXTaskTrampoline(void *);
 
 			void setUpTransmitTask(void);
-
 			void transmitTaskEntry(void);
 
-		private:
-			static const size_t TransmitQueueDepth = 8;
+			void transmitPacket(void *buffer, size_t length, uint32_t userData);
 
+		private:
+			// how many writes may be pending at a time
+			static const size_t TransmitQueueDepth = 8;
+			// size of the stack for the write task
 			static const size_t TransmitTaskStackSize = 200;
+			// write task priority
 			static const size_t TransmitTaskPriority = 2;
 
+			// the transmit ISR signals this semaphore
 			SemaphoreHandle_t txCompleteSignal = nullptr;
+
 			TaskHandle_t transmitTask = nullptr;
+			// write requests are stored here
 			QueueHandle_t transmitQueue = nullptr;
+
+			// lock this semaphore when we modify the descriptor
+			SemaphoreHandle_t txDescriptorLock = nullptr;
+			volatile mac_tx_dma_descriptor_t txDescriptor;
 
 		// DMA
 		public:
 			void setRxBuffers(void *buffers, size_t numBufs);
 			void releaseRxBuffer(int index);
-
-			void transmitPacket(void *buffer, size_t length, uint32_t userData);
 
 			int availableRxDescriptors(void);
 
@@ -126,14 +134,6 @@ namespace net {
 			void relinkRxDescriptors(void);
 
 		private:
-			SemaphoreHandle_t txDescriptorLock = nullptr;
-			size_t numTxDescriptors = 0;
-			void *txDescriptorsMem = nullptr;
-			volatile mac_tx_dma_descriptor_t *txDescriptors = nullptr;
-
-			bool dmaTransmittedFramesReady[32];
-
-
 			SemaphoreHandle_t rxDescriptorLock = nullptr;
 			size_t numRxDescriptors = 0;
 			void *rxDescriptorsMem = nullptr;
@@ -158,7 +158,6 @@ namespace net {
 			void disableEthernetIRQ(void);
 
 			uint32_t indexOfLastReceivedISR(void);
-			uint32_t indexOfLastTransmittedISR(void);
 			void discardLastRxPacket(void);
 
 		private:
