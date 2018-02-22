@@ -89,7 +89,7 @@ namespace net {
 //			bool getRxPacket(uint8_t **data, size_t *length, unsigned int *bufIndex);
 			void releaseRxBuffer(int index);
 
-			int freeRxDescriptors(void);
+			int availableRxDescriptors(void);
 
 			void dbgCheckDMAStatus(void);
 

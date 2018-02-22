@@ -135,7 +135,8 @@ void EthMAC::setUpMACRegisters(void) {
 	uint32_t wakeup = ETH->MACPMTCSR;
 	wakeup &= 0x7FFFFD98; // keep reserved bits
 
-	wakeup |= ETH_MACPMTCSR_GU;
+	wakeup |= ETH_MACPMTCSR_WFFRPR;
+//	wakeup |= ETH_MACPMTCSR_GU;
 
 	ETH->MACPMTCSR = wakeup;
 
@@ -177,17 +178,11 @@ void EthMAC::reset(void) {
  * Sets up the clocks for the Ethernet peripheral.
  */
 void EthMAC::setUpClocks(void) {
-	// enable clocks for the ETH peripherals
-	RCC_AHBPeriphClockCmd(RCC_AHBPeriph_ETH_MAC | RCC_AHBPeriph_ETH_MAC_Tx | RCC_AHBPeriph_ETH_MAC_Rx, ENABLE);
+	// enable clocks for the Ethernet peripheral and its DMA engines
+	RCC_AHBPeriphClockCmd(RCC_AHBPeriph_ETH_MAC, ENABLE);
 
-	// de-assert MAC reset
-//	RCC_AHBPeriphResetCmd(RCC_AHBPeriph_ETH_MAC_Tx, DISABLE);
-//	RCC_AHBPeriphResetCmd(RCC_AHBPeriph_ETH_MAC_Rx, DISABLE);
-//	RCC_AHBPeriphResetCmd(RCC_AHBPeriph_ETH_MAC, DISABLE);
-
-	// reset the MAC
-//	RCC_AHBPeriphResetCmd(RCC_AHBPeriph_ETH_MAC, ENABLE);
-//	RCC_AHBPeriphResetCmd(RCC_AHBPeriph_ETH_MAC, DISABLE);
+	RCC_AHBPeriphClockCmd(RCC_AHBPeriph_ETH_MAC_Tx, ENABLE);
+	RCC_AHBPeriphClockCmd(RCC_AHBPeriph_ETH_MAC_Rx, ENABLE);
 }
 
 /**
@@ -537,29 +532,7 @@ void EthMAC::setUpDMARegisters(void) {
 	dmaomr |= ETH_DMAOMR_RSF; // use receive store-and-forward mode
 	dmaomr |= ETH_DMAOMR_TSF; // use transmit store-and-forward mode
 
-//	dmaomr |= ETH_DMAOMR_FTF; // flush TX FIFO
-
 	ETH->DMAOMR = dmaomr;
-
-
-/*	// wait for the flush TX FIFO bit to be cleared
-	int timeout = 100000;
-	bool timeoutExpired = true;
-
-	do {
-		// read register and test the FTF bit
-		dmaomr = ETH->DMAOMR;
-
-		if((dmaomr & ETH_DMAOMR_FTF) == 0) {
-			// bit is clear so the flush is complete
-			timeoutExpired = false;
-			break;
-		}
-	} while(timeout--);
-
-	if(timeoutExpired) {
-		LOG(S_ERROR, "Timeout waiting for ETH_DMAOMR_FTF clear");
-	}*/
 
 
 	// configure interrupts
@@ -705,49 +678,6 @@ void EthMAC::setRxBuffers(void *buffers, size_t numBufs) {
 }
 
 /**
- * Finds a receive buffer that's owned by the CPU in the DMA descriptor list,
- * and returns its information. If no frames have been received, false is
- * returned.
- */
-/*bool EthMAC::getRxPacket(uint8_t **data, size_t *length, unsigned int *bufIndex) {
-	bool found = false;
-	uint32_t status, size;
-
-	// take the RX lock
-	if(xSemaphoreTake(this->rxDescriptorLock, portMAX_DELAY) != pdTRUE) {
-		LOG(S_ERROR, "Couldn't take rxDescriptorLock");
-		return false;
-	}
-
-	// iterate through the descriptors
-	for(size_t i = 0; i < this->numRxDescriptors; i++) {
-		status = this->rxDescriptors[i].status;
-		size = this->rxDescriptors[i].bufSz;
-
-		// is the DMA owns buffer bit clear?
-		if((status & RX_STATUS_DMA_OWNS_BUFFER) == 0 && (size & RX_BUFSZ_BUFFER_REQUESTED) == 0) {
-			*data = (uint8_t *) this->rxDescriptors[i].buf1Address;
-			*length = (status & RX_STATUS_DMA_FRAME_LENGTH_MASK) >> RX_STATUS_DMA_FRAME_LENGTH_SHIFT;
-			*bufIndex = i;
-
-			// set the "used" flag
-			this->rxDescriptors[i].bufSz |= RX_BUFSZ_BUFFER_REQUESTED;
-
-			// exit
-			found = true;
-			goto done;
-		}
-	}
-
-
-done: ;
-	// release the lock
-	xSemaphoreGive(this->rxDescriptorLock);
-
-	return found;
-}*/
-
-/**
  * Releases a received packet (and its buffer) back to the DMA engine so that
  * it may use it again for new received packets.
  */
@@ -847,15 +777,9 @@ void EthMAC::relinkRxDescriptors(void) {
  * Counts the number of free RX descriptors, i.e. those that are owned by the
  * DMA engine.
  */
-int EthMAC::freeRxDescriptors(void) {
+int EthMAC::availableRxDescriptors(void) {
 	int free = 0;
 
-/*	for(size_t i = 0; i < this->numRxDescriptors; i++) {
-		if(this->rxDescriptors[i].status & RX_STATUS_DMA_OWNS_BUFFER) {
-			free++;
-		}
-	}
-*/
 	for(size_t i = 0; i < this->numRxDescriptors; i++) {
 		if(this->dmaReceivedFramesReady[i]) {
 			free++;
@@ -961,7 +885,7 @@ void EthMAC::setTxBuffers(void *buffers, size_t numBufs) {
  */
 void EthMAC::dbgCheckDMAStatus(void) {
 	LOG(S_DEBUG, "Descriptors: TX = 0x%08x, RX = 0x%08x", ETH->DMATDLAR, ETH->DMARDLAR);
-	LOG(S_DEBUG, "Available descriptors: TX = ?, RX = %d", this->freeRxDescriptors());
+	LOG(S_DEBUG, "Available descriptors: TX = ?, RX = %d", this->availableRxDescriptors());
 
 	LOG(S_DEBUG, "Current descriptors: TX = 0x%08x, RX = 0x%08x", ETH->DMACHTDR, ETH->DMACHRDR);
 //	LOG(S_DEBUG, "Current TX buf: 0x%08x, current RX buf: 0x%08x", ETH->DMACHTBAR, ETH->DMACHRBAR);
@@ -1021,6 +945,9 @@ void EthMAC::handleIRQ(void) {
 	// was it generated due to a power management event?
 	else if(dmasr & ETH_DMASR_PMTS) {
 		// TODO: handle power events
+		(void) ETH->MACPMTCSR;
+
+		ETH->DMASR |= ETH_DMASR_PMTS;
 	}
 
 	// check if the DMA interrupt was caused due to an error
@@ -1040,6 +967,9 @@ void EthMAC::handleIRQ(void) {
 void EthMAC::handleMMCInterrupt(void) {
 	// reading the MMC counters clears their interrupts
 	this->readMMCCounters();
+
+	// acknowledge the interrupt here
+	ETH->DMASR |= ETH_DMASR_MMCS;
 }
 
 /**
@@ -1174,6 +1104,9 @@ void EthMAC::handleDMAErrorInterrupt(uint32_t dmasr) {
 	}
 	// handle unknown error
 	else {
+		// clear all interrupts
+		ETH->DMASR |= 0xFFFFFFFF;
+
 		LOG_ISR(S_ERROR, "DMA error: 0x%04x", err);
 	}
 
