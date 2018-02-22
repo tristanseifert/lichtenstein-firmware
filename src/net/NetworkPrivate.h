@@ -53,7 +53,20 @@ typedef enum {
 	 * descriptor has been sent and return it to the list of available send
 	 * descriptors.
 	 */
-	kNetworkMessageTransmitInterrupt
+	kNetworkMessageTransmitInterrupt,
+
+	/**
+	 * A packet was lost because no receive buffers were available.
+	 *
+	 * If the index value is 1, the receive process has been completely
+	 * stopped.
+	 */
+	kNetworkMessageRxPacketLost,
+
+	/**
+	 * Unknown interrupt: the status register is written to the index reg.
+	 */
+	kNetworkMessageDebugUnknownIRQ
 } network_message_type_t;
 
 /**

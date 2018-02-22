@@ -154,6 +154,8 @@ typedef struct __attribute__((__packed__)) {
 #define RX_STATUS_DMA_FT						(1 << 5)
 
 
+// set when the buffer was requested by the CPU to process
+#define RX_BUFSZ_BUFFER_REQUESTED			(1 << 30)
 // set in the size buf to inhibit receive interrupts
 #define RX_BUFSZ_DISABLE_IRQ					(1 << 31)
 // indicates the end of the descriptor list

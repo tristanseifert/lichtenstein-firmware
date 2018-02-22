@@ -89,13 +89,19 @@ namespace net {
 			bool getRxPacket(uint8_t **data, size_t *length, unsigned int *bufIndex);
 			void releaseRxPacket(int index);
 
+			int freeRxDescriptors(void);
+
 			void dbgCheckDMAStatus(void);
+
+			void resetRxDMAfterPacketLoss(void);
 
 			// TODO: determine if the buffers could be smaller
 			static const size_t rxBufSize = (EthMAC::MTU + 100);
 			static const size_t txBufSize = (EthMAC::MTU + 100);
 
 		private:
+			friend void EthMACDebugTimerCallback(TimerHandle_t);
+
 			void setUpDMARegisters(void);
 
 			void resumeTxDMA(void);
@@ -105,20 +111,22 @@ namespace net {
 
 			SemaphoreHandle_t txDescriptorLock = nullptr;
 			size_t numTxDescriptors = 0;
-
 			void *txDescriptorsMem = nullptr;
-			mac_tx_dma_descriptor_t *txDescriptors = nullptr;
+			volatile mac_tx_dma_descriptor_t *txDescriptors = nullptr;
+
+			uint64_t dmaReceivedFrames = 0;
+			uint64_t dmaReceivedFramesDiscarded = 0;
 
 			SemaphoreHandle_t rxDescriptorLock = nullptr;
 			size_t numRxDescriptors = 0;
-
 			void *rxDescriptorsMem = nullptr;
-			mac_rx_dma_descriptor_t *rxDescriptors = nullptr;
+			volatile mac_rx_dma_descriptor_t *rxDescriptors = nullptr;
 
 		// interrupts
 		public:
 			void handleIRQ(void);
 
+		private:
 			void handleMMCInterrupt(void);
 
 			void handleDMAInterrupt(uint32_t dmasr);
@@ -126,6 +134,14 @@ namespace net {
 
 			void enableEthernetIRQ(void);
 			void disableEthernetIRQ(void);
+
+			void discardLastRxPacket(void);
+
+		private:
+			// set if we get a "receive buffer unavailable" error
+			bool dmaReceiveStopped = false;
+			// set if we get a "transmit buffer unavailable" error
+			bool dmaTransmitStopped = false;
 
 		// initialization
 		private:

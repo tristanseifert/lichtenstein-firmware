@@ -43,6 +43,9 @@ DP83848C::DP83848C(Network *_net, EthMAC *_mac, bool _rmii, uint16_t _addr) : Et
 	// set up link state timer
 #if POLL_LINK_STATE
 	this->setUpLinkMonitor();
+
+	// force a link state change to propagate
+	this->checkForLinkStateChange();
 #endif
 }
 
@@ -87,6 +90,7 @@ void DP83848C::setUpRegisters(void) {
 	temp = 0;
 
 	temp |= MDIO_REG_ANAR_PAUSE; // support for normal PAUSE frames
+	temp |= MDIO_REG_ANAR_ASYM_PAUSE; // assymetric pause
 
 	temp |= MDIO_REG_ANAR_100BASE_TX_FD; // 100BASE-TX full duplex
 	temp |= MDIO_REG_ANAR_100BASE_TX_HD; // 100BASE-TX half duplex

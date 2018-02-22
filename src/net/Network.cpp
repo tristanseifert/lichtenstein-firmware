@@ -74,13 +74,6 @@ Network::Network() {
 	this->setUpEthernetGPIOs();
 	this->setUpClocks();
 
-	// set up the MAC and PHY, respectively
-	this->setUpMAC();
-	this->scanForPHYs();
-
-	// allocate network buffers
-	this->allocBuffers();
-
 	// set up the stack
 	this->setUpStack();
 
@@ -329,7 +322,7 @@ void Network::allocBuffers(void) {
 		this->rxBuffers[i] = pvPortMalloc(net::EthMAC::rxBufSize);
 		memset(this->rxBuffers[i], 0, net::EthMAC::rxBufSize);
 
-		LOG(S_INFO, "Allocated rx buffer %u at 0x%x", i, this->rxBuffers[i]);
+//		LOG(S_VERBOSE, "Allocated rx buffer %u at 0x%x", i, this->rxBuffers[i]);
 	}
 
 	// register the receive buffers to the DMA engine
@@ -339,7 +332,7 @@ void Network::allocBuffers(void) {
 	// allocate the transmit buffers
 	for(size_t i = 0; i < Network::numTxBuffers; i++) {
 		this->txBuffers[i] = pvPortMalloc(net::EthMAC::txBufSize);
-		LOG(S_INFO, "Allocated tx buffer %u at 0x%x", i, this->txBuffers[i]);
+//		LOG(S_VERBOSE, "Allocated tx buffer %u at 0x%x", i, this->txBuffers[i]);
 	}
 
 	// register the transmit buffers to the DMA engine
@@ -400,27 +393,57 @@ void Network::taskEntry(void) {
 	BaseType_t ok;
 	network_message_t msg;
 
+	// set up the MAC and PHY, respectively
+	this->setUpMAC();
+	this->scanForPHYs();
+
+	// allocate network buffers
+	this->allocBuffers();
+
+	int messages = 0;
+
+	// start the message loop
 	while(1) {
+		if((messages++ & 0x1F) == 0) {
+			this->mac->dbgCheckDMAStatus();
+		}
+
 		// attempt to receive a message
 		ok = xQueueReceive(this->messageQueue, &msg, portMAX_DELAY);
 
 		// parse message
 		if(ok == pdTRUE) {
-			this->mac->dbgCheckDMAStatus();
-
 			switch(msg.type) {
 				// link state change notification
 				case kNetworkMessageLinkStateChanged: {
 					net_link_speed_t speed = this->phy->getSpeed();
 					bool duplex = this->phy->isFullDuplex();
 
-					LOG(S_DEBUG, "Speed: %u, duplex %u", speed, duplex);
 
 					bool linkUp = (msg.index == 1) ? true : false;
 					LOG(S_INFO, "Link state: %u", linkUp);
+					LOG(S_DEBUG, "Speed: %u, duplex %u", speed, duplex);
 
 					break;
 				}
+
+				// if a receive packet is lost, reset the receive process
+				case kNetworkMessageRxPacketLost:
+					if(msg.index == 1) {
+						LOG(S_WARN, "Ethernet reception stopped");
+					} else {
+						LOG(S_WARN, "Exhausted RX buffers");
+					}
+
+					this->mac->dbgCheckDMAStatus();
+
+					this->mac->resetRxDMAfterPacketLoss();
+					break;
+
+				// unknown interrupt
+				case kNetworkMessageDebugUnknownIRQ:
+					LOG(S_INFO, "Unknown IRQ: 0x%04x", msg.index);
+					break;
 
 				// receive interrupt
 				case kNetworkMessageReceiveInterrupt:
@@ -466,7 +489,7 @@ void Network::findReceivedFrame(void) {
 	if(found) {
 		this->postMessage(&msg);
 	} else {
-		LOG(S_INFO, "Got RX irq but couldn't find a packet");
+		LOG(S_INFO, "Got RX message but couldn't find a packet");
 	}
 }
 
@@ -474,7 +497,7 @@ void Network::findReceivedFrame(void) {
  * Handles a received frame by forwarding it to the FreeRTOS TCP/IP stack.
  */
 void Network::handleReceivedFrame(network_message_t *msg) {
-	LOG(S_DEBUG, "Received frame of length %u, index %u", msg->packetLength, msg->index);
+//	LOG(S_DEBUG, "Received frame of length %u, index %u", msg->packetLength, msg->index);
 
 	// release the packet (TODO: forward to stack)
 	this->mac->releaseRxPacket(msg->index);
