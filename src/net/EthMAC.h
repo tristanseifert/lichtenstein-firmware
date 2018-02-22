@@ -81,13 +81,30 @@ namespace net {
 		private:
 			void reset(void);
 
+		// transmit task
+		private:
+			friend void _MACTXTaskTrampoline(void *);
+
+			void setUpTransmitTask(void);
+
+			void transmitTaskEntry(void);
+
+		private:
+			static const size_t TransmitQueueDepth = 8;
+
+			static const size_t TransmitTaskStackSize = 200;
+			static const size_t TransmitTaskPriority = 2;
+
+			SemaphoreHandle_t txCompleteSignal = nullptr;
+			TaskHandle_t transmitTask = nullptr;
+			QueueHandle_t transmitQueue = nullptr;
+
 		// DMA
 		public:
 			void setRxBuffers(void *buffers, size_t numBufs);
-			void setTxBuffers(void *buffers, size_t numBufs);
-
-//			bool getRxPacket(uint8_t **data, size_t *length, unsigned int *bufIndex);
 			void releaseRxBuffer(int index);
+
+			void transmitPacket(void *buffer, size_t length, uint32_t userData);
 
 			int availableRxDescriptors(void);
 
@@ -101,18 +118,20 @@ namespace net {
 			friend void EthMACDebugTimerCallback(TimerHandle_t);
 
 			void setUpDMARegisters(void);
+			void shutDownDMA(void);
 
 			void resumeTxDMA(void);
 			void resumeRxDMA(void);
 
-			void shutDownDMA(void);
-
 			void relinkRxDescriptors(void);
 
+		private:
 			SemaphoreHandle_t txDescriptorLock = nullptr;
 			size_t numTxDescriptors = 0;
 			void *txDescriptorsMem = nullptr;
 			volatile mac_tx_dma_descriptor_t *txDescriptors = nullptr;
+
+			bool dmaTransmittedFramesReady[32];
 
 
 			SemaphoreHandle_t rxDescriptorLock = nullptr;

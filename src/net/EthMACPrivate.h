@@ -13,6 +13,27 @@
 namespace net {
 
 /**
+ * Frame write request. This is an internal message that's queued when the
+ * transmit function is called.
+ *
+ * Transmission is handled by pushing transmit messages onto a queue, which is
+ * monitored by the transmit task - this task continuoully waits on a semaphore
+ * that's signalled by the transmit complete interrupt, kicking off a new TX
+ * operation (with a new descriptor) each time.
+ */
+typedef struct {
+	// user data
+	uint32_t userData;
+
+	// data to be sent
+	void *data;
+	// length of data to be sent
+	size_t length;
+} mac_write_request_t;
+
+
+
+/**
  * Defines a TX DMA buffer descriptor.
  */
 typedef struct __attribute__((__packed__)) {

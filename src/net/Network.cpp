@@ -328,9 +328,6 @@ void Network::allocBuffers(void) {
 		this->txBuffers[i] = pvPortMalloc(net::EthMAC::txBufSize);
 //		LOG(S_VERBOSE, "Allocated tx buffer %u at 0x%x", i, this->txBuffers[i]);
 	}
-
-	// register the transmit buffers to the DMA engine
-	this->mac->setTxBuffers(this->txBuffers, Network::numTxBuffers);
 }
 
 

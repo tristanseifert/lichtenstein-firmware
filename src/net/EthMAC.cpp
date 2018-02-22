@@ -50,6 +50,9 @@ EthMAC::EthMAC(Network *_net, bool useRMII) : net(_net), rmii(useRMII) {
 	this->txDescriptorLock = xSemaphoreCreateBinary();
 	xSemaphoreGive(this->txDescriptorLock);
 
+	// set up the task
+	this->setUpTransmitTask();
+
 	// reset the MAC
 	this->reset();
 
@@ -213,6 +216,17 @@ EthMAC::~EthMAC() {
 
 	if(this->txDescriptorLock) {
 		vSemaphoreDelete(this->txDescriptorLock);
+	}
+
+	// delete task and queue
+	if(this->transmitTask) {
+		vTaskDelete(this->transmitTask);
+	}
+	if(this->transmitQueue) {
+		vQueueDelete(this->transmitQueue);
+	}
+	if(this->txCompleteSignal) {
+		vSemaphoreDelete(this->txCompleteSignal);
 	}
 }
 
@@ -790,97 +804,6 @@ int EthMAC::availableRxDescriptors(void) {
 }
 
 /**
- * Sets the specified buffers as transmit buffers. Packets to be sent can be
- * written into these buffers, and transmitted over the wire with another
- * call.
- */
-void EthMAC::setTxBuffers(void *buffers, size_t numBufs) {
-	uint32_t *bufferAddresses = static_cast<uint32_t*>(buffers);
-
-	// take the RX lock
-	if(xSemaphoreTake(this->txDescriptorLock, portMAX_DELAY) != pdTRUE) {
-		LOG(S_ERROR, "Couldn't take txDescriptorLock");
-	}
-
-	// disable receive DMA
-	ETH->DMAOMR &= ~(ETH_DMAOMR_ST);
-
-	// deallocate any old TX descriptors
-	if(this->txDescriptorsMem) {
-		vPortFree(this->txDescriptorsMem);
-		this->txDescriptorsMem = nullptr;
-	}
-
-
-	// allocate buffer for the TX descriptors and align it
-	size_t txDescBufSz = sizeof(mac_tx_dma_descriptor_t) * numBufs;
-
-	this->txDescriptorsMem = pvPortMalloc(txDescBufSz + 16);
-	LOG(S_DEBUG, "Allocated %d TX descriptors at 0x%x", numBufs, this->txDescriptorsMem);
-
-	memset(this->txDescriptorsMem, 0, (txDescBufSz + 16));
-
-	// align the buffer
-	uint32_t address = (uint32_t) this->txDescriptorsMem;
-	uint32_t lowNybble = address & 0x0000000F;
-
-	if(lowNybble) {
-		address += (0x10 - lowNybble);
-		LOG(S_DEBUG, "Aligned TX descriptors to 0x%08x", address);
-	}
-
-	this->txDescriptors = (mac_tx_dma_descriptor_t *) address;
-
-
-	// populate each receive descriptor
-	for(unsigned int i = 0; i < numBufs; i++) {
-		volatile mac_tx_dma_descriptor_t *current = &(this->txDescriptors[i]);
-		volatile mac_tx_dma_descriptor_t *next = &(this->txDescriptors[(i + 1)]);
-
-		// configure the size and address
-		current->bufSz = ((EthMAC::rxBufSize) & 0x1FFF);
-		current->buf1Address = bufferAddresses[i];
-
-		// is this the last buffer?
-		if(i == (numBufs - 1)) {
-			// if so, set the end-of-list bit
-			current->status |= TX_STATUS_DMA_END_OF_LIST;
-		}
-		// if not, chain it to the address of the next buffer
-		else {
-			current->status |= TX_STATUS_DMA_NEXT_CHAINED;
-			current->buf2Address = (uint32_t) next;
-		}
-
-		// generate an IRQ when the buffer is transmitted
-		current->status |= TX_STATUS_DMA_IRQ_ON_COMPLETE;
-		// insert IP header and payload checksums
-		current->status |= TX_STATUS_DMA_CIC_ALL;
-
-		// the buffer contains a complete frame
-		current->status |= TX_STATUS_DMA_FIRST_SEGMENT;
-		current->status |= TX_STATUS_DMA_LAST_SEGMENT;
-
-//		LOG(S_DEBUG, "Set up descriptor %u: address 0x%x (next 0x%x) size 0x%x, status 0x%x", i, current->buf1Address, current->buf2Address, current->bufSz, current->status);
-	}
-
-	this->numTxDescriptors = numBufs;
-
-
-	// set the address of the receive descriptors
-	ETH->DMATDLAR = (uint32_t) this->txDescriptors;
-
-	// re-enable transmit DMA and poll for buffers
-	ETH->DMAOMR |= ETH_DMAOMR_ST;
-
-	this->resumeTxDMA();
-
-//done: ;
-	// release the lock
-	xSemaphoreGive(this->txDescriptorLock);
-}
-
-/**
  * Prints the DMA status.
  */
 void EthMAC::dbgCheckDMAStatus(void) {
@@ -897,6 +820,112 @@ void EthMAC::dbgCheckDMAStatus(void) {
 
 	// read management counters
 	LOG(S_DEBUG, "Received frames: %d, discarded %d", this->dmaReceivedFrames, this->dmaReceivedFramesDiscarded);
+}
+
+
+
+/**
+ * Transmits a packet consisting of the specified buffer and length.
+ */
+void EthMAC::transmitPacket(void *buffer, size_t length, uint32_t userData) {
+	BaseType_t ok;
+
+	// check parameters
+	if(buffer == nullptr || length > EthMAC::MTU) {
+		LOG(S_ERROR, "Invalid parameters: buffer 0x%08x, length %u", buffer, length);
+		return;
+	}
+
+	// build the write request
+	mac_write_request_t req;
+
+	req.data = buffer;
+	req.length = length;
+
+	req.userData = userData;
+
+	// queue it
+	ok = xQueueSendToBack(this->transmitQueue, &req, portMAX_DELAY);
+
+	if(ok != pdPASS) {
+		LOG(S_ERROR, "Write request couldn't be pushed on queue");
+	}
+}
+
+/**
+ * C trampoline to go into the FreeRTOS task.
+ */
+void _MACTXTaskTrampoline(void *ctx) {
+	(static_cast<EthMAC *>(ctx))->transmitTaskEntry();
+}
+
+/**
+ * Sets up the transmit task.
+ */
+void EthMAC::setUpTransmitTask(void) {
+	BaseType_t ok;
+
+	// allocate the semaphore used to signal the end of a transmission
+	this->txCompleteSignal = xSemaphoreCreateMutex();
+	xSemaphoreGive(this->txCompleteSignal);
+
+	// create the queue
+	this->transmitQueue = xQueueCreate(EthMAC::TransmitQueueDepth, sizeof(mac_write_request_t));
+
+	if(this->transmitQueue == nullptr) {
+		LOG(S_FATAL, "Couldn't create message queue!");
+	}
+
+	// now, create the task
+	ok = xTaskCreate(_MACTXTaskTrampoline, "MACTX", EthMAC::TransmitTaskStackSize,
+					 this, EthMAC::TransmitTaskPriority, &this->transmitTask);
+
+	if(ok != pdTRUE) {
+		LOG(S_FATAL, "Couldn't create task!");
+	}
+}
+
+/**
+ * Entry point for the transmit task.
+ */
+void EthMAC::transmitTaskEntry(void) {
+	BaseType_t ok;
+
+	mac_write_request_t req;
+
+	uint32_t userDataLastTx = 0;
+	void *bufferLastTx = nullptr;
+
+	while(1) {
+		// block on the write IRQ
+		ok = xQueueSemaphoreTake(this->txCompleteSignal, portMAX_DELAY);
+
+		if(ok != pdPASS) {
+			LOG(S_ERROR, "Couldn't take transmit complete semaphore!");
+			continue;
+		}
+
+		// notify the stack that the previous frame sent
+		if(bufferLastTx != nullptr) {
+
+		}
+
+		// attempt to get a write request
+		ok = xQueueReceive(this->transmitQueue, &req, portMAX_DELAY);
+
+		if(ok != pdPASS) {
+			LOG(S_ERROR, "Couldn't dequeue from transmit queue");
+			continue;
+		}
+
+		// store the information on this write so we can notify write completion
+		bufferLastTx = req.data;
+		userDataLastTx = req.userData;
+
+		// create descriptor
+
+		// start DMA write
+	}
 }
 
 
@@ -1024,10 +1053,9 @@ void EthMAC::handleDMAInterrupt(uint32_t dmasr) {
 
 	// was this a transmit interrupt?
 	else if(dmasr & ETH_DMASR_TS) {
-		// fill in the message and send it
-		// TODO: generate a useful message here
-
-//		ok = xQueueSendToBackFromISR(this->net->messageQueue, &msg, &woke);
+		// signal the end of a transmission
+		xSemaphoreGiveFromISR(this->txCompleteSignal, &woke);
+		ok = pdPASS;
 
 		// acknowledge interrupt
 		ETH->DMASR |= ETH_DMASR_TS;
