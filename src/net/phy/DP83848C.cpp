@@ -20,7 +20,7 @@
 #error "Interrupt-driven link state change notification is not supported"
 #endif
 
-namespace net {
+namespace net::phy {
 
 /**
  * Initializes the PHY. This sets up the LEDs, the (R)MII interface, and then

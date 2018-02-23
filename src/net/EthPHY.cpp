@@ -53,7 +53,7 @@ EthPHY *EthPHY::phyForId(Network *net, uint32_t id, uint16_t address, bool useRM
 	switch(id) {
 		// TI DP83848CVV
 		case 0x20005C90:
-			return new DP83848C(net, net->mac, useRMII, address);
+			return new phy::DP83848C(net, net->mac, useRMII, address);
 			break;
 
 		// no suitable PHY could be created

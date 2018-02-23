@@ -58,6 +58,7 @@ class Network {
 		bool postMessage(network_message_t *msg);
 
 		void handleReceivedFrame(network_message_t *msg);
+
 		void handleTransmittedFrame(network_message_t *msg);
 
 	private:
@@ -72,6 +73,14 @@ class Network {
 		TaskHandle_t task = nullptr;
 		QueueHandle_t messageQueue = nullptr;
 
+		// used to determine how many free buffers we have
+		SemaphoreHandle_t txBuffersFreeSemaphore = nullptr;
+
+	// API for network stack
+	public:
+		void *getTxBuffer(size_t size);
+
+
 	// PHY and MAC
 	private:
 		friend void ETH_IRQHandler(void);
@@ -79,7 +88,8 @@ class Network {
 		net::EthMAC *mac = nullptr;
 		net::EthPHY *phy = nullptr;
 
-	// buffer handling
+
+	// buffers
 	private:
 		void allocBuffers(void);
 
@@ -88,6 +98,9 @@ class Network {
 
 		static const size_t numTxBuffers = 2;
 		void *txBuffers[numTxBuffers];
+
+		bool txBuffersFree[numTxBuffers];
+
 
 	// callbacks from PHY
 	protected:

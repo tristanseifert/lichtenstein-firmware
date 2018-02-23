@@ -17,8 +17,6 @@
 
 #include <LichtensteinApp.h>
 
-#include "FreeRTOS_IP.h"
-
 #include <cstring>
 
 // hardware config for EEPROM
@@ -28,19 +26,6 @@
 #define ETH_RMII							1
 
 #endif
-
-
-/// default IP address, if DHCP fails
-static const uint8_t ucIPAddress[4] = { 192, 168, 1, 200 };
-/// default netmask, if DHCP fails
-static const uint8_t ucNetMask[4] = { 255, 255, 255, 0 };
-/// default router address, if DHCP fails
-static const uint8_t ucGatewayAddress[4] = { 192, 168, 1, 1 };
-/// default DNS server address
-static const uint8_t ucDNSServerAddress[4] = { 208, 67, 222, 222 };
-
-/// MAC Address, we need to store this again here
-uint8_t ucMACAddress[6];
 
 static Network *gNetwork = nullptr;
 
@@ -90,6 +75,7 @@ Network::~Network() {
 	// kill the network task
 	vTaskDelete(this->task);
 	vQueueDelete(this->messageQueue);
+	vSemaphoreDelete(this->txBuffersFreeSemaphore);
 
 	// deallocating the MAC and PHY will reset them
 	delete this->mac;
@@ -112,9 +98,6 @@ Network::~Network() {
 void Network::readMACFromEEPROM(void) {
 	Board *b = Board::sharedInstance();
 	b->configEEPROMRead(&this->macAddress, Network::ethParamMACOffset, 6);
-
-	// copy MAC address
-	memcpy(ucMACAddress, this->macAddress, 6);
 
 	// debug
 	LOG(S_INFO, "MAC address: %02x:%02x:%02x:%02x:%02x:%02x",
@@ -352,6 +335,13 @@ void Network::setUpTask(void) {
 		LOG(S_FATAL, "Couldn't create message queue!");
 	}
 
+	// create tx buffer semaphore
+	this->txBuffersFreeSemaphore = xQueueCreateCountingSemaphore(Network::numRxBuffers, Network::numRxBuffers);
+
+	if(this->txBuffersFreeSemaphore == nullptr) {
+		LOG(S_FATAL, "Couldn't create tx buffers free semaphore");
+	}
+
 	// now, create the task
 	ok = xTaskCreate(_NetTaskTrampoline, "Network", Network::TaskStackSize,
 					 this, Network::TaskPriority, &this->task);
@@ -399,9 +389,9 @@ void Network::taskEntry(void) {
 
 	// start the message loop
 	while(1) {
-		if((messages++ & 0x1F) == 0) {
+		/*if((messages++ & 0x1F) == 0) {
 			this->mac->dbgCheckDMAStatus();
-		}
+		}*/
 
 		// attempt to receive a message
 		ok = xQueueReceive(this->messageQueue, &msg, portMAX_DELAY);
@@ -442,8 +432,7 @@ void Network::taskEntry(void) {
 				case kNetworkMessageReceivedFrame:
 					this->handleReceivedFrame(&msg);
 					break;
-
-				// transmit interrupt
+				// frame was transmitted, return the buffer back
 				case kNetworkMessageTransmittedFrame:
 					this->handleTransmittedFrame(&msg);
 					break;
@@ -478,7 +467,58 @@ void Network::handleReceivedFrame(network_message_t *msg) {
  * network stack.
  */
 void Network::handleTransmittedFrame(network_message_t *msg) {
-	// TODO: do stuff
+	unsigned int index = msg->userData;
+
+	// user data is just the buffer index; mark it as free
+	this->txBuffersFree[index] = true;
+
+	// increment semaphore
+	xSemaphoreGive(this->txBuffersFreeSemaphore);
+}
+
+/**
+ * Attempts to acquire a transmit buffer. If no buffers are available, this
+ * routine blocks until one can be acquired.
+ */
+void *Network::getTxBuffer(size_t size) {
+	BaseType_t ok;
+	unsigned int freeBuffer = 0xFFFFFFFF;
+
+	// make sure the size doesn't exceed the buffer size
+	if(size > net::EthMAC::txBufSize) {
+		LOG(S_ERROR, "Size too large, %u bytes", size);
+		return nullptr;
+	}
+
+	// attempt to take the semaphore
+	ok = xSemaphoreTake(this->txBuffersFreeSemaphore, portMAX_DELAY);
+
+	if(ok != pdPASS) {
+		LOG(S_ERROR, "Couldn't take tx buffers semaphore");
+		return nullptr;
+	}
+
+
+	// find a free buffer
+	for(unsigned int i = 0; i < Network::numTxBuffers; i++) {
+		// is this buffer free?
+		if(this->txBuffersFree[i]) {
+			freeBuffer = i;
+			break;
+		}
+	}
+
+	// error checking
+	if(freeBuffer == 0xFFFFFFFF) {
+		LOG(S_ERROR, "Couldn't find free buffer after taking semaphore");
+		return nullptr;
+	}
+
+
+	// mark the buffer as used and return it
+	this->txBuffersFree[freeBuffer] = true;
+
+	return this->txBuffers[freeBuffer];
 }
 
 
@@ -487,30 +527,7 @@ void Network::handleTransmittedFrame(network_message_t *msg) {
  * Sets up the TCP/IP stack.
  */
 void Network::setUpStack(void) {
-	// initialize IP stack
-//	FreeRTOS_IPInit(ucIPAddress, ucNetMask, ucGatewayAddress, ucDNSServerAddress, this->macAddress);
-}
 
-
-/**
- * Generates a random number.
- */
-extern "C" UBaseType_t uxRand() {
-	static UBaseType_t g_seed = 0xDEADBEEF;
-
-	g_seed = (214013*g_seed+2531011);
-	return (g_seed>>16)&0x7FFF;
-}
-
-/**
- * Network event hook
- */
-extern "C" void vApplicationIPNetworkEventHook(eIPCallbackEvent_t event) {
-	if(event == eNetworkUp) {
-		LOG(S_INFO, "link up");
-	} else if(event == eNetworkDown) {
-		LOG(S_INFO, "link down");
-	}
 }
 
 

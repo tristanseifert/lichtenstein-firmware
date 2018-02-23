@@ -19,7 +19,7 @@
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wpadded"
 
-namespace net {
+namespace net::phy {
 	class DP83848C: public EthPHY {
 		public:
 			DP83848C(Network *net, EthMAC *mac, bool rmii, uint16_t address);

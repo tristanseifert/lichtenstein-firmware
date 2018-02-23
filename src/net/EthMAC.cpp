@@ -17,13 +17,15 @@
 
 namespace net {
 
+#ifdef DEBUG
 void EthMACDebugTimerCallback(TimerHandle_t timer) {
 	void *ctx = pvTimerGetTimerID(timer);
 	EthMAC *mac = static_cast<EthMAC *>(ctx);
 
 	mac->dbgCheckDMAStatus();
-	mac->resumeRxDMA();
+	ETH->DMARPDR = ETH_DMARPDR_RPD;
 }
+#endif
 
 /**
  * Initializes the MAC.
@@ -52,7 +54,7 @@ EthMAC::EthMAC(Network *_net, bool useRMII) : net(_net), rmii(useRMII) {
 
 	// clear buffers
 	memset((void *) &this->dmaReceivedFramesReady, (int) false,
-			sizeof(this->dmaReceivedFramesReady));
+			EthMAC::dmaReceivedFramesReadySz);
 
 	// set up the task
 	this->setUpTransmitTask();
@@ -588,21 +590,6 @@ void EthMAC::shutDownDMA(void) {
 }
 
 /**
- * Forces the transmit DMA to resume transmission.
- */
-void EthMAC::resumeTxDMA(void) {
-	ETH->DMATPDR = ETH_DMATPDR_TPD;
-}
-
-/**
- * Forces the receive DMA to resume receiving frames.
- */
-
-void EthMAC::resumeRxDMA(void) {
-	ETH->DMARPDR = ETH_DMARPDR_RPD;
-}
-
-/**
  * Sets the specified buffers as receive buffers. Packets are written into
  * these buffers as they are received. The application should release each
  * buffer as it finishes processing its contents so the Ethernet peripheral
@@ -682,8 +669,7 @@ void EthMAC::setRxBuffers(void *buffers, size_t numBufs) {
 
 	// re-enable receive DMA and poll for buffers
 	ETH->DMAOMR |= ETH_DMAOMR_SR;
-
-	this->resumeRxDMA();
+	ETH->DMARPDR = ETH_DMARPDR_RPD;
 
 //done: ;
 	// release the lock
@@ -911,8 +897,22 @@ void EthMAC::transmitTaskEntry(void) {
 
 		// notify the stack that the previous frame sent
 		if(bufferLastTx != nullptr) {
-			LOG(S_DEBUG, "Released buffer with userdata 0x%08x", userDataLastTx);
-			// TODO: notification
+			LOG(S_DEBUG, "Finished transmitting buffer with userdata 0x%08x", userDataLastTx);
+
+			// prepare a message
+			network_message_t msg;
+			memset(&msg, 0, sizeof(network_message_t));
+
+			msg.type = kNetworkMessageTransmittedFrame;
+			msg.data = (uint8_t *) bufferLastTx;
+			msg.userData = userDataLastTx;
+
+			// send message
+			ok = xQueueSendToBack(this->net->messageQueue, &msg, portMAX_DELAY);
+
+			if(ok != pdPASS) {
+				LOG_ISR(S_ERROR, "Couldn't write network task message: queue full");
+			}
 		}
 
 

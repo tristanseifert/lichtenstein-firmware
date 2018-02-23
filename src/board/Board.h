@@ -75,7 +75,7 @@ class Board {
 
 		void _testWriteBoardConfig(void);
 
-		SemaphoreHandle_t i2cMutex;
+		SemaphoreHandle_t i2cMutex = nullptr;
 
 	public:
 		void configEEPROMRead(void *buf, uint8_t address, uint8_t numBytes);

@@ -128,26 +128,34 @@ namespace net {
 			void setUpDMARegisters(void);
 			void shutDownDMA(void);
 
-			void resumeTxDMA(void);
-			void resumeRxDMA(void);
-
 			void relinkRxDescriptors(void);
 
+		// Receive structures
 		private:
 			SemaphoreHandle_t rxDescriptorLock = nullptr;
+
+			// number of receive descriptors
 			size_t numRxDescriptors = 0;
+			// memory for receive descriptors
 			void *rxDescriptorsMem = nullptr;
+			// address of first receive descriptor
 			volatile mac_rx_dma_descriptor_t *rxDescriptors = nullptr;
 
-			volatile bool dmaReceivedFramesReady[32];
+			// size of the frame ready array
+			static const size_t dmaReceivedFramesReadySz = 32;
+			// which descriptors can we receive packets in to?
+			volatile bool dmaReceivedFramesReady[dmaReceivedFramesReadySz];
 
+			// how many frames were received with DMA
 			uint64_t dmaReceivedFrames = 0;
+			// how many frames were discarded due to unavailable buffers
 			uint64_t dmaReceivedFramesDiscarded = 0;
 
 			volatile mac_rx_dma_descriptor_t *rxLastReceived = nullptr;
 
 		// interrupts
 		public:
+			// called when the ISR comes in
 			void handleIRQ(void);
 
 		private:
@@ -162,6 +170,7 @@ namespace net {
 			uint32_t indexOfLastReceivedISR(void);
 			void discardLastRxPacket(void);
 
+		// Interrupt state
 		private:
 			// set if we get a "receive buffer unavailable" error
 			bool dmaReceiveStopped = false;
@@ -173,6 +182,7 @@ namespace net {
 			void setUpClocks(void);
 			void setUpMACRegisters(void);
 
+		// pointer to the network class
 		private:
 			Network *net = nullptr;
 			bool rmii = false;

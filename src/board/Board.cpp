@@ -332,7 +332,7 @@ void Board::initConfigEEPROM(void) {
     I2C_Cmd(CFG_EEPROM_I2C, ENABLE);
 
     // create the semaphore
-    i2cMutex = xSemaphoreCreateMutex();
+    this->i2cMutex = xSemaphoreCreateMutex();
 
     this->i2cResetFix();
 
