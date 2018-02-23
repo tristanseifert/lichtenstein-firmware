@@ -391,10 +391,8 @@ void Network::taskEntry(void) {
 	// allocate network buffers
 	this->allocBuffers();
 
-	// set up the stack
+	// set up the stack and network servers
 	this->setUpStack();
-
-	// when the stack is set up, start network services
 	this->startNetServices();
 
 	int messages = 0;

@@ -83,29 +83,39 @@
  *
  * See http://www.freertos.org/a00110.html.
  *----------------------------------------------------------*/
-#define configUSE_PORT_OPTIMISED_TASK_SELECTION 1
-
 #define configUSE_PREEMPTION				1
 #define configUSE_IDLE_HOOK				1
 #define configUSE_TICK_HOOK				1
 #define configCPU_CLOCK_HZ				((unsigned long) 72000000)
 #define configTICK_RATE_HZ				((TickType_t) 100)
 #define configMAX_PRIORITIES				(5)
-#define configMINIMAL_STACK_SIZE			((unsigned short) 100)
+#define configMINIMAL_STACK_SIZE			((unsigned short) 150)
 #define configMAX_TASK_NAME_LEN			(16)
 #define configUSE_16_BIT_TICKS			0
-#define configIDLE_SHOULD_YIELD			0
+#define configIDLE_SHOULD_YIELD			1
 
 // timers
 #define configUSE_TIMERS					1
-#define configTIMER_TASK_PRIORITY		(configMAX_PRIORITIES - 2)
+#define configTIMER_TASK_PRIORITY		2
 #define configTIMER_QUEUE_LENGTH			4
 #define configTIMER_TASK_STACK_DEPTH		(configMINIMAL_STACK_SIZE * 3)
 
-// the kernel will keep track of time each task has been running
-#define configGENERATE_RUN_TIME_STATS	0
-#define configUSE_TRACE_FACILITY			1
+// record size of the stack
+#define configRECORD_STACK_HIGH_ADDRESS	1
 
+// enable freertos debugger
+#ifdef DEBUG
+	#define configUSE_PORT_OPTIMISED_TASK_SELECTION 0 // Can cause older FreeRTOS Eclipse plug-in to crash otherwise...
+	#define configTASK_RETURN_ADDRESS 0 // place 0 task return address on stack to help FreeRTOS-aware debugger (GDB unwind thread stack)
+	#define configUSE_TRACE_FACILITY 1 // without this, FreeRTOS-aware debug task list misses tasks and shows bogus stack overflows
+	#define portREMOVE_STATIC_QUALIFIER	1
+	#define configGENERATE_RUN_TIME_STATS 0
+#else
+	#define configUSE_PORT_OPTIMISED_TASK_SELECTION 1
+#endif
+
+
+// include the getTaskHandle function (used for CPU time tracking)
 #define INCLUDE_xTaskGetIdleTaskHandle	1
 
 // disallow static allocation

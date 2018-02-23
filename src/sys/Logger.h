@@ -28,9 +28,14 @@ class Logger {
 		virtual ~Logger();
 
 	private:
+		// priority of the logger task
+		static const int TaskPriority = 1;
+		// stack size for the logger task
+		static const size_t TaskStackSize = 200;
+
 		bool printToTrace = true;
 
-		TaskHandle_t task;
+		TaskHandle_t task = nullptr;
 		QueueHandle_t messageQueue;
 
 		friend void _LoggerTaskTrampoline(void *);

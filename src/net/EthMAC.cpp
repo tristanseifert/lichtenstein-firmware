@@ -50,6 +50,10 @@ EthMAC::EthMAC(Network *_net, bool useRMII) : net(_net), rmii(useRMII) {
 	this->txDescriptorLock = xSemaphoreCreateBinary();
 	xSemaphoreGive(this->txDescriptorLock);
 
+	// clear buffers
+	memset((void *) &this->dmaReceivedFramesReady, (int) false,
+			sizeof(this->dmaReceivedFramesReady));
+
 	// set up the task
 	this->setUpTransmitTask();
 
@@ -556,6 +560,7 @@ void EthMAC::setUpDMARegisters(void) {
 	dmaier |= ETH_DMAIER_NISE; // enable normal interrupts
 	dmaier |= ETH_DMAIER_RIE; // receive interrupt enabled
 	dmaier |= ETH_DMAIER_TIE; // transmit interrupt enabled
+	dmaier |= ETH_DMAIER_ERIE; // early receive interrupt
 
 	dmaier |= ETH_DMAIER_AISE; // enable error interrupts
 	dmaier |= ETH_DMAIER_FBEIE; // fatal bus error enabled
@@ -672,6 +677,7 @@ void EthMAC::setRxBuffers(void *buffers, size_t numBufs) {
 
 
 	// set the address of the receive descriptors
+	this->rxLastReceived = this->rxDescriptors;
 	ETH->DMARDLAR = (uint32_t) this->rxDescriptors;
 
 	// re-enable receive DMA and poll for buffers
@@ -774,6 +780,8 @@ void EthMAC::relinkRxDescriptors(void) {
 		// stop reception
 		ETH->DMAOMR &= ~(ETH_DMAOMR_SR);
 	} else {
+		this->rxLastReceived = (volatile mac_rx_dma_descriptor_t *) start;
+
 		// set the address, start reception and re-read descriptors
 		ETH->DMARDLAR = start;
 		ETH->DMAOMR |= ETH_DMAOMR_SR;
@@ -903,6 +911,7 @@ void EthMAC::transmitTaskEntry(void) {
 
 		// notify the stack that the previous frame sent
 		if(bufferLastTx != nullptr) {
+			LOG(S_DEBUG, "Released buffer with userdata 0x%08x", userDataLastTx);
 			// TODO: notification
 		}
 
@@ -924,7 +933,7 @@ void EthMAC::transmitTaskEntry(void) {
 		xSemaphoreTake(this->txDescriptorLock, portMAX_DELAY);
 
 		// create descriptor
-		memset(&this->txDescriptor, 0, sizeof(mac_tx_dma_descriptor_t));
+		memset((void *) &this->txDescriptor, 0, sizeof(mac_tx_dma_descriptor_t));
 
 		this->txDescriptor.status |= TX_STATUS_DMA_OWNS_BUFFER; // start DMA tx
 		this->txDescriptor.status |= TX_STATUS_DMA_IRQ_ON_COMPLETE; // IRQ on complete
@@ -942,7 +951,7 @@ void EthMAC::transmitTaskEntry(void) {
 
 
 		// set location of the descriptor (this starts DMA)
-		ETH->DMARDLAT = (uint32_t) &(this->txDescriptor);
+		ETH->DMATDLAR = (uint32_t) &(this->txDescriptor);
 
 		ETH->DMAOMR |= ETH_DMAOMR_ST;
 		ETH->DMATPDR = ETH_DMATPDR_TPD;
@@ -1035,11 +1044,21 @@ void EthMAC::handleDMAInterrupt(uint32_t dmasr) {
 	// acknowledge all interrupts
 	ETH->DMASR |= 0xFFFFFFFF;
 
+	// was this an early receive interrupt?
+	if(dmasr & ETH_DMASR_ERS) {
+		// copy address of descriptor
+		volatile uint32_t addr = ETH->DMACHRDR;
+		this->rxLastReceived = (volatile mac_rx_dma_descriptor_t *) addr;
 
+		// acknowledge interrupt
+		ETH->DMASR |= ETH_DMASR_ERS;
+	}
 	// was this a receive interrupt?
-	if(dmasr & ETH_DMASR_RS) {
+	else if(dmasr & ETH_DMASR_RS) {
 		uint32_t index = this->indexOfLastReceivedISR();
 		uint32_t status = this->rxDescriptors[index].status;
+
+//		(volatile void) index;
 
 		// fill in the message and send it
 		msg.type = kNetworkMessageReceivedFrame;
@@ -1056,6 +1075,10 @@ void EthMAC::handleDMAInterrupt(uint32_t dmasr) {
 		} else {
 			this->dmaReceivedFrames++;
 
+			// copy the address of the next descriptor for later
+			volatile uint32_t addr = ETH->DMACHRDR;
+			this->rxLastReceived = (volatile mac_rx_dma_descriptor_t *) addr;
+
 			// mark the frame as used
 			this->dmaReceivedFramesReady[index] = false;
 			this->relinkRxDescriptors();
@@ -1063,13 +1086,6 @@ void EthMAC::handleDMAInterrupt(uint32_t dmasr) {
 
 		// acknowledge interrupt
 		ETH->DMASR |= ETH_DMASR_RS;
-	}
-	// was this an early receive interrupt?
-	else if(dmasr & ETH_DMASR_ERS) {
-		// TODO: do something here?
-
-		// acknowledge interrupt
-		ETH->DMASR |= ETH_DMASR_ERS;
 	}
 
 	// was this a transmit interrupt?
@@ -1174,26 +1190,18 @@ void EthMAC::handleDMAErrorInterrupt(uint32_t dmasr) {
 }
 
 /**
- * Returns the index of the descriptor of the last received packet.
- *
- * @note This really only works right from an ISR.
+ * Returns the index of the descriptor of the last received packet. This does
+ * some simple pointer arithmetic on the pointer written during the "early
+ * receive" interrupt.
  */
 uint32_t EthMAC::indexOfLastReceivedISR(void) {
-	// get the difference between the current and start
-	uint32_t current = ETH->DMACHRDR;
-	uint32_t base = (uint32_t) this->rxDescriptors;
+	// figure out the index in the buffer
+	uint32_t addr = (uint32_t) this->rxLastReceived;
+	uint32_t start = (uint32_t) this->rxDescriptors;
 
-	uint32_t difference = current - base;
-	uint32_t currentBuf = difference / sizeof(mac_rx_dma_descriptor_t);
+	uint32_t difference = (addr - start);
 
-	// decrement it by one to get the previous (i.e. the just received) buffer
-	if(currentBuf > 0) {
-		currentBuf = (currentBuf - 1);
-	} else {
-		currentBuf = (this->numRxDescriptors - 1);
-	}
-
-	return currentBuf;
+	return (difference / sizeof(mac_rx_dma_descriptor_t));
 }
 
 /**

@@ -76,7 +76,8 @@ Logger::Logger() {
 	// create logger task
 	BaseType_t ok;
 
-	ok = xTaskCreate(_LoggerTaskTrampoline, "Logger", 200, this, 4, &this->task);
+	ok = xTaskCreate(_LoggerTaskTrampoline, "Logger", Logger::TaskStackSize,
+			this, Logger::TaskPriority, &this->task);
 
 	if(ok != pdPASS) {
 		LOG(S_FATAL, "Couldn't create logger task!");

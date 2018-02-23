@@ -139,10 +139,12 @@ namespace net {
 			void *rxDescriptorsMem = nullptr;
 			volatile mac_rx_dma_descriptor_t *rxDescriptors = nullptr;
 
-			bool dmaReceivedFramesReady[32];
+			volatile bool dmaReceivedFramesReady[32];
 
 			uint64_t dmaReceivedFrames = 0;
 			uint64_t dmaReceivedFramesDiscarded = 0;
+
+			volatile mac_rx_dma_descriptor_t *rxLastReceived = nullptr;
 
 		// interrupts
 		public:

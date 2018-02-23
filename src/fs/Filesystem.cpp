@@ -48,10 +48,6 @@ static const flash_info_t supportedChips[numSupportedChips] = {
  */
 #define FLASH_DMA_THRESHOLD					(1024*1024)
 
-// task configuration
-#define FS_TASK_STACK_SZ 					200
-#define FS_TASK_PRIORITY						(4)
-
 // filesystem configuration
 #define FS_SIZE								(1024 * 1024 * 2)
 
@@ -275,8 +271,8 @@ void Filesystem::setUpTask(void) {
 	// create the task
 	BaseType_t ok;
 
-	ok = xTaskCreate(_FSTaskTrampoline, "FS", FS_TASK_STACK_SZ,
-					 this, FS_TASK_PRIORITY, &this->task);
+	ok = xTaskCreate(_FSTaskTrampoline, "FS", Filesystem::taskStackSize,
+					 this, Filesystem::taskPriority, &this->task);
 
 	if(ok != pdPASS) {
 		LOG(S_ERROR, "Couldn't create filesystem task!");
@@ -374,7 +370,7 @@ int Filesystem::spiffsMount(bool triedFormat) {
 
 	// get info about the fs
 	uint32_t total, used;
-	ret = SPIFFS_info(&fs, &total, &used);
+	ret = SPIFFS_info(&this->fs, &total, &used);
 
 	if(ret == 0) {
 		LOG(S_INFO, "%d bytes used, %d bytes total", used, total);

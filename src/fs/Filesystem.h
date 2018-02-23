@@ -69,6 +69,9 @@ class Filesystem {
 		friend void _FSTaskTrampoline(void *);
 		void taskEntry(void);
 
+		static const size_t taskStackSize = 300;
+		static const int taskPriority = 1;
+
 		TaskHandle_t task = nullptr;
 
 	private:
