@@ -236,6 +236,7 @@ int Stack::sendTxPacket(void *_packet, stack_mac_addr_t destination, uint16_t pr
 
 	ethHeader->macSrc = this->mac;
 	ethHeader->macDest = destination;
+//	ethHeader->macDest = kMACAddressBroadcast;
 	ethHeader->etherType = __builtin_bswap16(proto);
 
 	// XXX: debugging

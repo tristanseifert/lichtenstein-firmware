@@ -140,7 +140,7 @@ void EthMAC::setUpMACRegisters(void) {
 	uint32_t flow = ETH->MACFCR;
 	flow &= 0x0000FF00; // keep reserved bits
 
-	flow |= (0xFFFF << 16); // set pause time (1 = 512 bit times)
+	flow |= (0x7FFF << 16); // set pause time (1 = 512 bit times)
 	flow |= ETH_MACFCR_PLT_Minus28; // re-transmit pause frame 144 slots later
 
 	flow |= ETH_MACFCR_UPFD; // respond to pause frames with our unicast MAC
@@ -564,6 +564,21 @@ void EthMAC::setUpDMARegisters(void) {
 
 	ETH->DMABMR = dmabmr;
 
+	// flush the TX FIFO
+	ETH->DMAOMR |= ETH_DMAOMR_FTF;
+
+	volatile int timeout = 20000;
+
+	do {
+		if((ETH->DMAOMR & ETH_DMAOMR_FTF) == 0) {
+			break;
+		}
+	} while(timeout--);
+
+	if(timeout <= 0) {
+		LOG(S_ERROR, "Timeout waiting for DMAOMR_FTF to clear");
+	}
+
 	// configure operation mode
 	uint32_t dmaomr = ETH->DMAOMR;
 	dmaomr &= 0xF8CD1F21; // keep reserved bits
@@ -921,7 +936,7 @@ void EthMAC::transmitTaskEntry(void) {
 
 		// notify the stack that the previous frame sent
 		if(bufferLastTx != nullptr) {
-			LOG(S_DEBUG, "Finished transmitting buffer with userdata 0x%08x", userDataLastTx);
+			LOG(S_DEBUG, "Finished transmitting buffer with userdata 0x%08x, status 0x%08x", userDataLastTx, this->txDescriptor.status);
 
 			// prepare a message
 			network_message_t msg;
@@ -956,21 +971,38 @@ void EthMAC::transmitTaskEntry(void) {
 		// get the lock on the tx descriptor
 		xSemaphoreTake(this->txDescriptorLock, portMAX_DELAY);
 
+		// stop transmit state machine (and mask tx stopped irq)
+		uint32_t dmaier = ETH->DMAIER;
+		ETH->DMAIER &= ~(ETH_DMAIER_TPSIE);
+
+		ETH->DMAOMR &= ~(ETH_DMAOMR_ST);
+
 		// create descriptor
 		memset((void *) &this->txDescriptor, 0, sizeof(mac_tx_dma_descriptor_t));
 
 		this->txDescriptor.status |= TX_STATUS_DMA_OWNS_BUFFER; // start DMA tx
+
 		this->txDescriptor.status |= TX_STATUS_DMA_IRQ_ON_COMPLETE; // IRQ on complete
 		this->txDescriptor.status |= TX_STATUS_DMA_LAST_SEGMENT; // last segment
 		this->txDescriptor.status |= TX_STATUS_DMA_FIRST_SEGMENT; // first segment
 
 		this->txDescriptor.status |= TX_STATUS_DMA_END_OF_LIST; // end of DMA descriptor list
+		this->txDescriptor.status |= TX_STATUS_DMA_NEXT_CHAINED; // end of DMA descriptor list
 
 		this->txDescriptor.status |= TX_STATUS_DMA_CIC_ALL; // insert all checksums
 
 		// set the buffer and length we wish to send
-		this->txDescriptor.bufSz = (uint32_t) req.length & 0x1FFF;
+		this->txDescriptor.bufSz = (uint32_t) (req.length & 0x1FFF);
 		this->txDescriptor.buf1Address = (uint32_t) req.data;
+		this->txDescriptor.buf2Address = (uint32_t) &this->txDescriptor;
+
+		// force sync
+		__DSB();
+
+		// is the TX buffer busy flag set?
+		if(ETH->DMASR & ETH_DMASR_TBUS) {
+		    ETH->DMASR = ETH_DMASR_TBUS;
+		}
 
 		// we're done writing to the descriptor, so release the lock
 		xSemaphoreGive(this->txDescriptorLock);
@@ -978,16 +1010,10 @@ void EthMAC::transmitTaskEntry(void) {
 		LOG(S_DEBUG, "Set up TX descriptor and started TX for userdata %u", userDataLastTx);
 
 		// acknowledge the IRQ if not already done
-		ETH->DMASR |= ETH_DMASR_TPSS | ETH_DMASR_ETS;
+		ETH->DMASR = ETH_DMASR_TPSS | ETH_DMASR_ETS;
 
 		// re-enable transmitter, if it was disabled
 		ETH->MACCR |= ETH_MACCR_TE;
-
-		// stop transmit state machine (and mask tx stopped irq)
-		uint32_t dmaier = ETH->DMAIER;
-		ETH->DMAIER &= ~(ETH_DMAIER_TPSIE);
-
-		ETH->DMAOMR &= ~(ETH_DMAOMR_ST);
 
 		// set location of the descriptor (this starts DMA)
 		ETH->DMATDLAR = (uint32_t) &(this->txDescriptor);
@@ -1042,29 +1068,27 @@ void EthMAC::disableEthernetIRQ(void) {
  * Handles an interrupt from the Ethernet peripheral.
  */
 void EthMAC::handleIRQ(void) {
-	uint32_t dmasr = ETH->DMASR;
-
 	// was the interrupt caused due to an MMC interrupt?
-	if(dmasr & ETH_DMASR_MMCS) {
+	if(ETH->DMASR & ETH_DMASR_MMCS) {
 		this->handleMMCInterrupt();
 	}
 
 	// was it generated due to a power management event?
-	else if(dmasr & ETH_DMASR_PMTS) {
+	 if(ETH->DMASR & ETH_DMASR_PMTS) {
 		// TODO: handle power events
 		(void) ETH->MACPMTCSR;
 
 		ETH->DMASR |= ETH_DMASR_PMTS;
 	}
 
-	// check if the DMA interrupt was caused due to an error
-	else if(dmasr & ETH_DMASR_AIS) {
-		this->handleDMAErrorInterrupt(dmasr);
+	// check if the DMA interrupt was due to normal operation
+	if(ETH->DMASR & ETH_DMASR_NIS) {
+		this->handleDMAInterrupt(ETH->DMASR);
 	}
 
-	// check if the DMA interrupt was due to normal operation
-	else if(dmasr & ETH_DMASR_NIS) {
-		this->handleDMAInterrupt(dmasr);
+	// check if the DMA interrupt was caused due to an error
+	if(ETH->DMASR & ETH_DMASR_AIS) {
+		this->handleDMAErrorInterrupt(ETH->DMASR);
 	}
 }
 
@@ -1076,7 +1100,7 @@ void EthMAC::handleMMCInterrupt(void) {
 	this->readMMCCounters();
 
 	// acknowledge the interrupt here
-	ETH->DMASR |= ETH_DMASR_MMCS;
+	ETH->DMASR = ETH_DMASR_MMCS;
 }
 
 /**
@@ -1090,7 +1114,7 @@ void EthMAC::handleDMAInterrupt(uint32_t dmasr) {
 	network_message_t msg;
 
 	// acknowledge all interrupts
-	ETH->DMASR |= 0xFFFFFFFF;
+//	ETH->DMASR |= 0xFFFFFFFF;
 
 	// was this an early receive interrupt?
 	if(dmasr & ETH_DMASR_ERS) {
@@ -1099,7 +1123,7 @@ void EthMAC::handleDMAInterrupt(uint32_t dmasr) {
 		this->rxLastReceived = (volatile mac_rx_dma_descriptor_t *) addr;
 
 		// acknowledge interrupt
-		ETH->DMASR |= ETH_DMASR_ERS;
+		ETH->DMASR = ETH_DMASR_ERS;
 	}
 	// was this a receive interrupt?
 	else if(dmasr & ETH_DMASR_RS) {
@@ -1133,7 +1157,7 @@ void EthMAC::handleDMAInterrupt(uint32_t dmasr) {
 		}
 
 		// acknowledge interrupt
-		ETH->DMASR |= ETH_DMASR_RS;
+		ETH->DMASR = ETH_DMASR_RS;
 	}
 
 	// was this a transmit interrupt?
@@ -1148,20 +1172,26 @@ void EthMAC::handleDMAInterrupt(uint32_t dmasr) {
 
 //		LOG_ISR(S_DEBUG, "TX descriptor status: 0x%08x", this->txDescriptor.status);
 
+		// clear the TX descriptor address
+//		ETH->DMATDLAR = 0;
+
 		// acknowledge interrupt
-		ETH->DMASR |= ETH_DMASR_TS;
+		ETH->DMASR = ETH_DMASR_TS;
 	}
 	// are all transmit buffers unavailable?
 	else if(dmasr & ETH_DMASR_TBUS) {
 		this->dmaTransmitStopped = true;
 
 		// acknowledge interrupt
-		ETH->DMASR |= ETH_DMASR_TBUS;
+		ETH->DMASR = ETH_DMASR_TBUS;
 	}
 	// early transmit?
 	else if(dmasr & ETH_DMASR_ETS) {
-		ETH->DMASR |= ETH_DMASR_ETS;
+		ETH->DMASR = ETH_DMASR_ETS;
 	}
+
+	// acknowledge the normal irqs
+	ETH->DMASR = ETH_DMASR_NIS;
 
 
 	// if a message was sent, perform a context switch if applicable
@@ -1198,7 +1228,7 @@ void EthMAC::handleDMAErrorInterrupt(uint32_t dmasr) {
 		}
 
 		// clear interrupt
-		ETH->DMASR |= ETH_DMASR_RBUS;
+		ETH->DMASR = ETH_DMASR_RBUS;
 	}
 	// did the receive process enter the stopped state?
 	else if(err & ETH_DMASR_RPSS) {
@@ -1216,7 +1246,7 @@ void EthMAC::handleDMAErrorInterrupt(uint32_t dmasr) {
 		}
 
 		// clear interrupt
-		ETH->DMASR |= ETH_DMASR_RPSS;
+		ETH->DMASR = ETH_DMASR_RPSS;
 	}
 	// are the transmit buffers unavailable?
 	else if(err & ETH_DMASR_TBUS) {
@@ -1225,7 +1255,7 @@ void EthMAC::handleDMAErrorInterrupt(uint32_t dmasr) {
 		LOG_ISR(S_ERROR, "All tx buffers unavailable");
 
 		// clear interrupt
-		ETH->DMASR |= ETH_DMASR_TBUS;
+		ETH->DMASR = ETH_DMASR_TBUS;
 	}
 	// was the TX process stopped? (we get this from clearing ST)
 	else if(err & ETH_DMASR_TPSS) {
@@ -1234,12 +1264,12 @@ void EthMAC::handleDMAErrorInterrupt(uint32_t dmasr) {
 //		LOG_ISR(S_ERROR, "TX process stopped: 0x%08x", ETH->DMASR);
 
 		// clear interrupt
-		ETH->DMASR |= ETH_DMASR_TPSS;
+		ETH->DMASR = ETH_DMASR_TPSS;
 	}
 	// handle unknown error
 	else {
 		// clear all interrupts
-		ETH->DMASR |= 0xFFFFFFFF;
+		ETH->DMASR = 0xFFFFFFFF;
 
 		LOG_ISR(S_ERROR, "DMA error: 0x%04x", err);
 	}

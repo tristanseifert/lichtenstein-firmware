@@ -96,7 +96,7 @@
 // mask for protocol selector
 #define MDIO_REG_ANAR_SELECTOR_MASK			(0x1F)
 // default protocol selector value for Ethernet
-#define MDIO_REG_ANAR_SELECTOR_ETH			(0b0001)
+#define MDIO_REG_ANAR_SELECTOR_ETH			(0b00001)
 
 /**
  * Auto-Negotiation Link Partner Ability Register

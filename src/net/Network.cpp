@@ -188,6 +188,16 @@ void Network::setUpEthernetGPIOs(void) {
 				 RCC_APB2Periph_GPIOD | RCC_APB2Periph_GPIOE, ENABLE);
 	RCC_APB2PeriphClockCmd(RCC_APB2Periph_AFIO, ENABLE);
 
+	// set up the RMII state
+#if ETH_RMII
+	RCC_AHBPeriphResetCmd(RCC_AHBPeriph_ETH_MAC, ENABLE);
+	AFIO->MAPR |= AFIO_MAPR_MII_RMII_SEL;
+	RCC_AHBPeriphResetCmd(RCC_AHBPeriph_ETH_MAC, DISABLE);
+#endif
+
+	// enable remap for Ethernet (RX_DV-CRS = PD8, RXD0 = PD9, RXD1 = PD10)
+	GPIO_PinRemapConfig(GPIO_Remap_ETH, ENABLE);
+
 	// all pins below are 50MHz
 	gpio.GPIO_Speed = GPIO_Speed_50MHz;
 
@@ -223,14 +233,14 @@ void Network::setUpEthernetGPIOs(void) {
 
 
 	// RMII_RXD[0,1] (PD9, PD10) remap
-	GPIO_PinRemapConfig(GPIO_Remap_ETH, ENABLE);
+//	GPIO_PinRemapConfig(GPIO_Remap_ETH, ENABLE);
 
 //	gpio.GPIO_Mode = GPIO_Mode_IN_FLOATING;
 	gpio.GPIO_Pin = GPIO_Pin_9 | GPIO_Pin_10;
 	GPIO_Init(GPIOD, &gpio);
 
 	// RMII_CRS_DV (PD8) remap
-	GPIO_PinRemapConfig(GPIO_Remap_ETH, ENABLE);
+//	GPIO_PinRemapConfig(GPIO_Remap_ETH, ENABLE);
 
 //	gpio.GPIO_Mode = GPIO_Mode_IN_FLOATING;
 	gpio.GPIO_Pin = GPIO_Pin_8;

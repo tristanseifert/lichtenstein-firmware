@@ -127,6 +127,8 @@ void DP83848C::setUpRegisters(void) {
 	// Configure PCSR: standard 100Mbps operation
 	temp = 0;
 
+	temp |= MDIO_REG_PCSR_SCRAMBLER_LOCK_LOSS;
+
 	if(this->writeRegister(MDIO_REG_PCSR, temp) == false) {
 		LOG(S_ERROR, "Couldn't write PCSR register");
 		goto done;
@@ -138,7 +140,7 @@ void DP83848C::setUpRegisters(void) {
 
 	temp |= (MDIO_REG_10BTSCR_SQUELCH_330MV & MDIO_REG_10BTSCR_SQUELCH_MASK);
 
-	temp |= MDIO_REG_10BTSCR_LOOPBACK_DIS; // don't receive TX in half duplex
+//	temp |= MDIO_REG_10BTSCR_LOOPBACK_DIS; // don't receive TX in half duplex
 
 	if(this->writeRegister(MDIO_REG_10BTSCR, temp) == false) {
 		LOG(S_ERROR, "Couldn't write 10BTSCR register");
@@ -154,6 +156,8 @@ void DP83848C::setUpRegisters(void) {
 		// TODO: should we use RMII version 1.0?
 	}
 
+	temp |= ((0b01) & MDIO_REG_RBR_ELAST_BUF_MASK);
+
 	if(this->writeRegister(MDIO_REG_RBR, temp) == false) {
 		LOG(S_ERROR, "Couldn't write RBR register");
 		goto done;
@@ -164,9 +168,6 @@ void DP83848C::setUpRegisters(void) {
 	temp = 0;
 
 	temp |= MDIO_REG_PHYCR_AUTO_MDIX; // enable Auto-MDIX
-
-	temp |= MDIO_REG_PHYCR_PAUSE_RX; // receive PAUSE frames
-	temp |= MDIO_REG_PHYCR_PAUSE_TX; // transmit PAUSE frames
 
 	temp &= (uint16_t) ~(MDIO_REG_PHYCR_LED_CFG1); // LED mode 0
 	temp |= MDIO_REG_PHYCR_LED_CFG0; // LED mode 0
@@ -265,7 +266,7 @@ void DP83848C::reset(void) {
 	uint16_t temp = 0;
 
 	// reset timeout
-	int timeout = 100000;
+	volatile int timeout = 100000;
 
 	// start the transaction
 	if(this->startMDIOTransaction() == false) {
@@ -297,6 +298,13 @@ void DP83848C::reset(void) {
 done: ;
 	// finish up the transaction
 	this->endMDIOTransaction();
+
+	// we have to wait ~3µS
+	timeout = 200000;
+
+	do {
+		// nothing
+	} while(timeout--);
 }
 
 
