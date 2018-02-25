@@ -86,7 +86,7 @@ int main(int argc, char* argv[]) {
 	Clock::init();
 
 	// start tasks and other higher-level facilities
-//	Output::init();
+	Output::init();
 
 	// some debugging to diagnose memory usage
 	LOG(S_DEBUG, "heap usage: %u bytes free, %u bytes total",

@@ -15,15 +15,15 @@
 #include "semphr.h"
 
 #if HW == HW_MUSTARD
-// level shifter output enable (active low)
+// level shifter output enable (active low): PB14
 #define LED_OE_PORT							GPIOB
 #define LED_OE_PIN							GPIO_Pin_14
 #define LED_OE_GPIO_CLOCK					RCC_APB2Periph_GPIOB
 
 #define LED_OE_ACTIVE_LOW					1
 
-
-// LED output 0 (SPI2_MOSI)
+// TODO: Implement SPI MUXing for SPI1 here instead
+// LED output 0 (SPI2_MOSI): PB15
 #define LED_OUT0_PORT						GPIOB
 #define LED_OUT0_PIN							GPIO_Pin_15
 #define LED_OUT0_GPIO_CLOCK					RCC_APB2Periph_GPIOB
@@ -47,7 +47,8 @@
 #define LED_OUT0_DMA_PERIPH_BASE				((uint32_t) (&(SPI2->DR)))
 
 
-// LED output 1 (SPI3_MOSI AF)
+
+// LED output 1 (SPI3_MOSI AF): PC12
 #define LED_OUT1_PORT						GPIOC
 #define LED_OUT1_PIN							GPIO_Pin_12
 #define LED_OUT1_GPIO_CLOCK					RCC_APB2Periph_GPIOC
@@ -143,7 +144,7 @@ void Output::initOutputGPIOs(void) {
 	GPIO_WriteBit(LED_OE_PORT, LED_OE_PIN, LED_OE_ACTIVE_LOW ? Bit_SET : Bit_RESET);
 
 
-	// set up LED0 out
+/*	// set up LED0 out
 	RCC_APB2PeriphClockCmd(LED_OUT0_GPIO_CLOCK, ENABLE);
 
 	gpio.GPIO_Mode = GPIO_Mode_AF_PP;
@@ -152,7 +153,7 @@ void Output::initOutputGPIOs(void) {
 
 #if LED_OUT0_NEEDS_REMAP
 	GPIO_PinRemapConfig(LED_OUT0_REMAP, ENABLE);
-#endif
+#endif*/
 	// set up LED1 out
 	RCC_APB2PeriphClockCmd(LED_OUT1_GPIO_CLOCK, ENABLE);
 
@@ -165,7 +166,7 @@ void Output::initOutputGPIOs(void) {
 #endif
 
 	// enable clocks for SPIs
-	RCC_APB1PeriphClockCmd(LED_OUT0_SPI_RCC_CLOCK, ENABLE);
+//	RCC_APB1PeriphClockCmd(LED_OUT0_SPI_RCC_CLOCK, ENABLE);
 	RCC_APB1PeriphClockCmd(LED_OUT1_SPI_RCC_CLOCK, ENABLE);
 
 	// prepare shared SPI settings
@@ -183,10 +184,10 @@ void Output::initOutputGPIOs(void) {
 
 
 	// set up SPI for LED0 out
-	spi.SPI_BaudRatePrescaler = LED_OUT0_SPI_BAUD;
+/*	spi.SPI_BaudRatePrescaler = LED_OUT0_SPI_BAUD;
 
 	SPI_Init(LED_OUT0_SPI, &spi);
-	SPI_Cmd(LED_OUT0_SPI, ENABLE);
+	SPI_Cmd(LED_OUT0_SPI, ENABLE);*/
 
 	// set up SPI for LED1 out
 	spi.SPI_BaudRatePrescaler = LED_OUT1_SPI_BAUD;
@@ -270,6 +271,7 @@ int Output::outputData(int channel, void *data, size_t length) {
 	// get the SPI peripheral
 	if(channel == 0) {
 		spi = LED_OUT0_SPI;
+		return 0;
 	} else if(channel == 1) {
 		spi = LED_OUT1_SPI;
 	}
