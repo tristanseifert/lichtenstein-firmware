@@ -24,6 +24,10 @@ namespace net {
 	class EthPHY;
 }
 
+namespace ip {
+	class Stack;
+}
+
 class Network {
 	friend class net::EthMAC;
 	friend class net::EthPHY;
@@ -76,10 +80,6 @@ class Network {
 		// used to determine how many free buffers we have
 		SemaphoreHandle_t txBuffersFreeSemaphore = nullptr;
 
-	// API for network stack
-	public:
-		void *getTxBuffer(size_t size);
-
 
 	// PHY and MAC
 	private:
@@ -100,6 +100,23 @@ class Network {
 		void *txBuffers[numTxBuffers];
 
 		bool txBuffersFree[numTxBuffers];
+
+	// network stack
+	private:
+		ip::Stack *stack = nullptr;
+
+	public:
+		int releaseRxPacket(uint32_t userData);
+		int registerMulticastMAC(uint8_t *address);
+		int unregisterMulticastMAC(uint8_t *address);
+
+	// API for network stack
+	public:
+		void *getTxBuffer(size_t size);
+		void queueTxBuffer(void *addr);
+
+	private:
+		size_t bytesToTransmit[numTxBuffers];
 
 
 	// callbacks from PHY

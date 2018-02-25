@@ -15,6 +15,9 @@
 
 #include <cstring>
 
+// assert PE0 when writing a packet
+#define ASSERT_PE0_FOR_TX					1
+
 namespace net {
 
 #ifdef DEBUG
@@ -70,6 +73,18 @@ EthMAC::EthMAC(Network *_net, bool useRMII) : net(_net), rmii(useRMII) {
 	// enable interrupts
 	this->enableEthernetIRQ();
 
+	// enable the PE0 GPIO if needed
+#if ASSERT_PE0_FOR_TX
+	GPIO_InitTypeDef gpio;
+
+	gpio.GPIO_Mode = GPIO_Mode_Out_PP;
+	gpio.GPIO_Pin = GPIO_Pin_0;
+	gpio.GPIO_Speed = GPIO_Speed_50MHz;
+
+	GPIO_Init(GPIOE, &gpio);
+	GPIO_ResetBits(GPIOE, GPIO_Pin_0);
+#endif
+
 	// XXX: Debugging
 /*	TimerHandle_t t = xTimerCreate("MACDbg", pdMS_TO_TICKS(5000), pdTRUE, this, EthMACDebugTimerCallback);
 	xTimerStart(t, portMAX_DELAY);
@@ -99,6 +114,7 @@ void EthMAC::setUpMACRegisters(void) {
 	cfg |= ETH_MACCR_IPCO; // enable IP checksum offloading
 	cfg |= ETH_MACCR_BL_4; // back-off timer between 0 and 4
 	cfg |= ETH_MACCR_DC; // wait 24,288 bits before giving up in half duplex
+	cfg |= ETH_MACCR_APCS; // strip the padding and CRC when receiving frames
 
 	cfg |= ETH_MACCR_TE; // enable transmitter
 	cfg |= ETH_MACCR_RE; // enable receiver
@@ -192,6 +208,9 @@ void EthMAC::setUpClocks(void) {
 
 	RCC_AHBPeriphClockCmd(RCC_AHBPeriph_ETH_MAC_Tx, ENABLE);
 	RCC_AHBPeriphClockCmd(RCC_AHBPeriph_ETH_MAC_Rx, ENABLE);
+
+	// enable clock to the CRC engine
+	RCC_AHBPeriphClockCmd(RCC_AHBPeriph_CRC, ENABLE);
 }
 
 /**
@@ -537,6 +556,7 @@ void EthMAC::setUpDMARegisters(void) {
 	uint32_t dmabmr = ETH->DMABMR;
 	dmabmr &= 0xFC000080; // keep reserved bits
 
+	dmabmr |= ETH_DMABMR_USP; // TX and RX have separate beat settings
 	dmabmr |= ETH_DMABMR_RTPR_2_1; // RX DMA gets 2x more bus time than TX DMA
 	dmabmr |= ETH_DMABMR_RDP_32Beat; // 32 beats per DMA for RX
 	dmabmr |= ETH_DMABMR_PBL_32Beat; // 32 beats per DMA for TX
@@ -548,9 +568,11 @@ void EthMAC::setUpDMARegisters(void) {
 	uint32_t dmaomr = ETH->DMAOMR;
 	dmaomr &= 0xF8CD1F21; // keep reserved bits
 
-	dmaomr |= ETH_DMAOMR_DTCEFD; // don't drop payload checksum errors
+	dmaomr |= ETH_DMAOMR_DTCEFD; // don't drop frames with payload checksum errors
 	dmaomr |= ETH_DMAOMR_RSF; // use receive store-and-forward mode
 	dmaomr |= ETH_DMAOMR_TSF; // use transmit store-and-forward mode
+	dmaomr |= ETH_DMAOMR_TTC_32Bytes; // tx after 32 bytes in FIFO
+	dmaomr |= ETH_DMAOMR_RTC_32Bytes; // rx after 32 bytes in FIFO
 
 	ETH->DMAOMR = dmaomr;
 
@@ -696,7 +718,7 @@ void EthMAC::releaseRxBuffer(int index) {
 	// release the lock again
 	xSemaphoreGive(this->rxDescriptorLock);
 
-//	LOG(S_DEBUG, "Released RX buffer %u", index);
+//	LOG(S_DEBUG, "Released RX descriptor %u", index);
 }
 
 /**
@@ -753,7 +775,7 @@ void EthMAC::relinkRxDescriptors(void) {
 		}
 	}
 
-	// if we have less than 4 descriptors, also send a pause frame
+	// if we have less than 4 descriptors available, send a pause frame
 	if(freeDescriptors < 4) {
 		ETH->MACFCR |= ETH_MACFCR_FCBBPA;
 	}
@@ -797,7 +819,7 @@ int EthMAC::availableRxDescriptors(void) {
  */
 void EthMAC::dbgCheckDMAStatus(void) {
 	LOG(S_DEBUG, "Descriptors: TX = 0x%08x, RX = 0x%08x", ETH->DMATDLAR, ETH->DMARDLAR);
-	LOG(S_DEBUG, "Available descriptors: TX = ?, RX = %d", this->availableRxDescriptors());
+	LOG(S_DEBUG, "Available descriptors: RX = %d", this->availableRxDescriptors());
 
 	LOG(S_DEBUG, "Current descriptors: TX = 0x%08x, RX = 0x%08x", ETH->DMACHTDR, ETH->DMACHRDR);
 //	LOG(S_DEBUG, "Current TX buf: 0x%08x, current RX buf: 0x%08x", ETH->DMACHTBAR, ETH->DMACHRBAR);
@@ -824,6 +846,8 @@ void EthMAC::transmitPacket(void *buffer, size_t length, uint32_t userData) {
 		LOG(S_ERROR, "Invalid parameters: buffer 0x%08x, length %u", buffer, length);
 		return;
 	}
+
+	LOG(S_DEBUG, "Write request: buffer 0x%x, length %u, userData %u", buffer, length, userData);
 
 	// build the write request
 	mac_write_request_t req;
@@ -940,6 +964,8 @@ void EthMAC::transmitTaskEntry(void) {
 		this->txDescriptor.status |= TX_STATUS_DMA_LAST_SEGMENT; // last segment
 		this->txDescriptor.status |= TX_STATUS_DMA_FIRST_SEGMENT; // first segment
 
+		this->txDescriptor.status |= TX_STATUS_DMA_END_OF_LIST; // end of DMA descriptor list
+
 		this->txDescriptor.status |= TX_STATUS_DMA_CIC_ALL; // insert all checksums
 
 		// set the buffer and length we wish to send
@@ -949,12 +975,34 @@ void EthMAC::transmitTaskEntry(void) {
 		// we're done writing to the descriptor, so release the lock
 		xSemaphoreGive(this->txDescriptorLock);
 
+		LOG(S_DEBUG, "Set up TX descriptor and started TX for userdata %u", userDataLastTx);
+
+		// acknowledge the IRQ if not already done
+		ETH->DMASR |= ETH_DMASR_TPSS | ETH_DMASR_ETS;
+
+		// re-enable transmitter, if it was disabled
+		ETH->MACCR |= ETH_MACCR_TE;
+
+		// stop transmit state machine (and mask tx stopped irq)
+		uint32_t dmaier = ETH->DMAIER;
+		ETH->DMAIER &= ~(ETH_DMAIER_TPSIE);
+
+		ETH->DMAOMR &= ~(ETH_DMAOMR_ST);
 
 		// set location of the descriptor (this starts DMA)
 		ETH->DMATDLAR = (uint32_t) &(this->txDescriptor);
 
 		ETH->DMAOMR |= ETH_DMAOMR_ST;
 		ETH->DMATPDR = ETH_DMATPDR_TPD;
+
+#if ASSERT_PE0_FOR_TX
+		GPIO_SetBits(GPIOE, GPIO_Pin_0);
+#endif
+
+		this->dmaTransmitStopped = false;
+
+		// unmask the TX state machine stopped IRQ
+		ETH->DMAIER |= (dmaier & ETH_DMAIER_TPSIE);
 	}
 }
 
@@ -1094,6 +1142,12 @@ void EthMAC::handleDMAInterrupt(uint32_t dmasr) {
 		xSemaphoreGiveFromISR(this->txCompleteSignal, &woke);
 		ok = pdPASS;
 
+#if ASSERT_PE0_FOR_TX
+		GPIO_ResetBits(GPIOE, GPIO_Pin_0);
+#endif
+
+//		LOG_ISR(S_DEBUG, "TX descriptor status: 0x%08x", this->txDescriptor.status);
+
 		// acknowledge interrupt
 		ETH->DMASR |= ETH_DMASR_TS;
 	}
@@ -1103,6 +1157,10 @@ void EthMAC::handleDMAInterrupt(uint32_t dmasr) {
 
 		// acknowledge interrupt
 		ETH->DMASR |= ETH_DMASR_TBUS;
+	}
+	// early transmit?
+	else if(dmasr & ETH_DMASR_ETS) {
+		ETH->DMASR |= ETH_DMASR_ETS;
 	}
 
 
@@ -1164,8 +1222,19 @@ void EthMAC::handleDMAErrorInterrupt(uint32_t dmasr) {
 	else if(err & ETH_DMASR_TBUS) {
 		this->dmaTransmitStopped = true;
 
+		LOG_ISR(S_ERROR, "All tx buffers unavailable");
+
 		// clear interrupt
 		ETH->DMASR |= ETH_DMASR_TBUS;
+	}
+	// was the TX process stopped? (we get this from clearing ST)
+	else if(err & ETH_DMASR_TPSS) {
+		this->dmaTransmitStopped = true;
+
+//		LOG_ISR(S_ERROR, "TX process stopped: 0x%08x", ETH->DMASR);
+
+		// clear interrupt
+		ETH->DMASR |= ETH_DMASR_TPSS;
 	}
 	// handle unknown error
 	else {

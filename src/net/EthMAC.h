@@ -88,6 +88,7 @@ namespace net {
 			void setUpTransmitTask(void);
 			void transmitTaskEntry(void);
 
+		public:
 			void transmitPacket(void *buffer, size_t length, uint32_t userData);
 
 		private:
@@ -147,9 +148,9 @@ namespace net {
 			volatile bool dmaReceivedFramesReady[dmaReceivedFramesReadySz];
 
 			// how many frames were received with DMA
-			uint64_t dmaReceivedFrames = 0;
+			volatile uint64_t dmaReceivedFrames = 0;
 			// how many frames were discarded due to unavailable buffers
-			uint64_t dmaReceivedFramesDiscarded = 0;
+			volatile uint64_t dmaReceivedFramesDiscarded = 0;
 
 			volatile mac_rx_dma_descriptor_t *rxLastReceived = nullptr;
 

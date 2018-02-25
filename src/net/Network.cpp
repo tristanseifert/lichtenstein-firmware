@@ -7,10 +7,11 @@
 #define LOG_MODULE "NET"
 
 #include "Network.h"
-
 #include "NetworkPrivate.h"
 #include "EthMAC.h"
 #include "EthPHY.h"
+
+#include "ip/Stack.h"
 
 #include "../board/Board.h"
 #include "../clock/Clock.h"
@@ -309,6 +310,10 @@ void Network::allocBuffers(void) {
 	// allocate the transmit buffers
 	for(size_t i = 0; i < Network::numTxBuffers; i++) {
 		this->txBuffers[i] = pvPortMalloc(net::EthMAC::txBufSize);
+		memset(this->txBuffers[i], 0, net::EthMAC::txBufSize);
+
+		// mark them as free
+		this->txBuffersFree[i] = true;
 //		LOG(S_VERBOSE, "Allocated tx buffer %u at 0x%x", i, this->txBuffers[i]);
 	}
 }
@@ -404,10 +409,13 @@ void Network::taskEntry(void) {
 					net_link_speed_t speed = this->phy->getSpeed();
 					bool duplex = this->phy->isFullDuplex();
 
-
+					// log info about the link state
 					bool linkUp = (msg.index == 1) ? true : false;
 					LOG(S_INFO, "Link state: %u", linkUp);
-					LOG(S_DEBUG, "Speed: %u, duplex %u", speed, duplex);
+					LOG(S_DEBUG, "Speed: %u Mbps, %s duplex", speed,
+							(duplex ? "full" : "half"));
+
+					this->stack->linkStateChanged(linkUp);
 
 					break;
 				}
@@ -454,12 +462,8 @@ void Network::taskEntry(void) {
  * Handles a received frame by forwarding it to the FreeRTOS TCP/IP stack.
  */
 void Network::handleReceivedFrame(network_message_t *msg) {
-//	LOG(S_DEBUG, "Received frame of length %u, index %u", msg->packetLength, msg->index);
-
-	// TODO: forward to the IP stack
-
-	// release the packet
-	this->mac->releaseRxBuffer(msg->index);
+	// forward packet to the network stack
+	this->stack->receivedPacket(msg->data, msg->packetLength, msg->index);
 }
 
 /**
@@ -470,6 +474,7 @@ void Network::handleTransmittedFrame(network_message_t *msg) {
 	unsigned int index = msg->userData;
 
 	// user data is just the buffer index; mark it as free
+	LOG(S_DEBUG, "Transmitted tx buffer %u", index);
 	this->txBuffersFree[index] = true;
 
 	// increment semaphore
@@ -516,9 +521,40 @@ void *Network::getTxBuffer(size_t size) {
 
 
 	// mark the buffer as used and return it
-	this->txBuffersFree[freeBuffer] = true;
+	LOG(S_DEBUG, "Gave tx buffer %u, length %u", freeBuffer, size);
+
+	this->txBuffersFree[freeBuffer] = false;
+	this->bytesToTransmit[freeBuffer] = size;
 
 	return this->txBuffers[freeBuffer];
+}
+
+/**
+ * Queues the specified buffer for transmission. The called should no longer
+ * write to the buffer or otherwise handle it, as it will be re-used after it
+ * has been transmitted.
+ */
+void Network::queueTxBuffer(void *addr) {
+	// get the index of the buffer
+	int index = -1;
+
+	for(size_t i = 0; i < Network::numTxBuffers; i++) {
+		// compare addresses
+		if(this->txBuffers[i] == addr) {
+			index = i;
+		}
+	}
+
+	if(index == -1) {
+		LOG(S_ERROR, "Couldn't find tx buffer");
+		return;
+	}
+
+	// get the length that was originally specified
+	size_t length = this->bytesToTransmit[index];
+
+	// hand it off to the MAC
+	this->mac->transmitPacket(addr, length, index);
 }
 
 
@@ -527,7 +563,48 @@ void *Network::getTxBuffer(size_t size) {
  * Sets up the TCP/IP stack.
  */
 void Network::setUpStack(void) {
+	// allocate the stack; this is all we really need to do
+	this->stack = new ip::Stack(this);
 
+	// set the unicast MAC address
+	this->stack->setUnicastMACAddress(this->macAddress);
+}
+
+/**
+ * Releases a previously received packet. This returns the buffer back to
+ * the available pool, and allows another frame to be received in it.
+ *
+ * @return 0 if successful
+ */
+int Network::releaseRxPacket(uint32_t userData) {
+	// validate the index
+	if(userData > Network::numRxBuffers) {
+		LOG(S_ERROR, "can't release packet with userdata %u", userData);
+		return -1;
+	}
+
+	// release buffer back to MAC
+	this->mac->releaseRxBuffer(userData);
+
+	return 0;
+}
+
+/**
+ * Registers a multicast MAC address with the IP stack.
+ *
+ * @return 0 if the MAC was registered, error code otherwise.
+ */
+int Network::registerMulticastMAC(uint8_t *address) {
+	// TODO: implement
+	return -1;
+}
+
+/**
+ * Removes the registration for a previous multicast MAC address.
+ */
+int Network::unregisterMulticastMAC(uint8_t *address) {
+	// TODO: implement
+	return -1;
 }
 
 

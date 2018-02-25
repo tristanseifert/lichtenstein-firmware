@@ -24,5 +24,7 @@
 // CMSIS
 #include "cmsis_device.h"
 
+// snprintf-type functions
+#include <mini-printf/mini-printf.h>
 
 #endif /* INCLUDE_LICHTENSTEINAPP_H_ */
