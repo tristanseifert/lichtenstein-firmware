@@ -425,6 +425,10 @@ void Network::taskEntry(void) {
 					LOG(S_DEBUG, "Speed: %u Mbps, %s duplex", speed,
 							(duplex ? "full" : "half"));
 
+					// update MAC
+					this->mac->linkStateChanged(linkUp, duplex, speed);
+
+					// update the stack
 					this->stack->linkStateChanged(linkUp);
 
 					break;
@@ -484,7 +488,7 @@ void Network::handleTransmittedFrame(network_message_t *msg) {
 	unsigned int index = msg->userData;
 
 	// user data is just the buffer index; mark it as free
-	LOG(S_DEBUG, "Transmitted tx buffer %u", index);
+//	LOG(S_DEBUG, "Transmitted tx buffer %u", index);
 	this->txBuffersFree[index] = true;
 
 	// increment semaphore
@@ -531,7 +535,7 @@ void *Network::getTxBuffer(size_t size) {
 
 
 	// mark the buffer as used and return it
-	LOG(S_DEBUG, "Gave tx buffer %u, length %u", freeBuffer, size);
+//	LOG(S_DEBUG, "Gave tx buffer %u, length %u", freeBuffer, size);
 
 	this->txBuffersFree[freeBuffer] = false;
 	this->bytesToTransmit[freeBuffer] = size;

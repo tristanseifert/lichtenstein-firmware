@@ -58,7 +58,7 @@ System::System() {
 	xTimerStart(this->cpuLoadOutputTimer, 0);
 #endif
 	// initialize the filesystem too
-	Filesystem::init();
+//	Filesystem::init();
 }
 
 /**

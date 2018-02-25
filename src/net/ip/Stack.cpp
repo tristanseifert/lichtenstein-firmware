@@ -27,9 +27,10 @@ Stack::Stack(Network *n) : net(n) {
 	this->arp = new ARP(this);
 
 	// XXX: testing
-	this->ip = __builtin_bswap32(0xac100d96);
+//	this->ip = __builtin_bswap32(0xac100d96);
+	this->ip = __builtin_bswap32(0xc0a800c8);
 	this->netMask = __builtin_bswap32(0xFFFFFF00);
-	this->routerIp = __builtin_bswap32(0xac100d01);
+//	this->routerIp = __builtin_bswap32(0xac100d01);
 
 	char ip[16];
 	Stack::ipToString(this->ip, ip, 16);

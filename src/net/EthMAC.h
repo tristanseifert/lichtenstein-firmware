@@ -17,6 +17,7 @@
 #include <cstdint>
 
 #include "EthMACPrivate.h"
+#include "EthPHYTypes.h"
 
 class Network;
 
@@ -109,6 +110,10 @@ namespace net {
 			// lock this semaphore when we modify the descriptor
 			SemaphoreHandle_t txDescriptorLock = nullptr;
 			volatile mac_tx_dma_descriptor_t txDescriptor;
+			volatile mac_tx_dma_descriptor_t txDescriptor2;
+
+			// number of frames transmitted
+			volatile uint64_t dmaTransmittedFrames = 0;
 
 		// DMA
 		public:
@@ -174,14 +179,18 @@ namespace net {
 		// Interrupt state
 		private:
 			// set if we get a "receive buffer unavailable" error
-			bool dmaReceiveStopped = false;
+			volatile bool dmaReceiveStopped = false;
 			// set if we get a "transmit buffer unavailable" error
-			bool dmaTransmitStopped = false;
+			volatile bool dmaTransmitStopped = false;
 
 		// initialization
 		private:
 			void setUpClocks(void);
 			void setUpMACRegisters(void);
+
+		// link state change
+		public:
+			void linkStateChanged(bool linkUp, bool duplex, net_link_speed_t speed);
 
 		// pointer to the network class
 		private:
