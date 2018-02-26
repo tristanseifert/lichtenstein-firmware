@@ -21,9 +21,9 @@
 
 
 // produce logging output when resolving IP addresses to MAC addresses
-#define LOG_ADDRESS_TO_MAC						1
+#define LOG_ADDRESS_TO_MAC						0
 // produce logging output for sending frames
-#define LOG_TRANSMIT								1
+#define LOG_TRANSMIT								0
 
 
 

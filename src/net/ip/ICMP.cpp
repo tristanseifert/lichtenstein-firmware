@@ -23,9 +23,9 @@
 // generate logs for each received ICMP packet
 #define LOG_RECEIVED_PACKETS					0
 // generate logs for each received ping
-#define LOG_RECEIVED_PINGS					1
+#define LOG_RECEIVED_PINGS					0
 // generate logs for each transmitted ICMP packet
-#define LOG_TRANSMITTED_PACKETS				1
+#define LOG_TRANSMITTED_PACKETS				0
 
 
 namespace ip {
@@ -42,6 +42,8 @@ void _ICMPTaskTrampoline(void *ctx) {
  */
 ICMP::ICMP(Stack *_stack, IPv4 *_ipv4) : stack(_stack), ipv4(_ipv4) {
 	BaseType_t ok;
+
+	LOG(S_DEBUG, "ICMP packet size: %u", sizeof(icmp_packet_ipv4_t));
 
 	// create the queue
 	this->messageQueue = xQueueCreate(ICMP::messageQueueSize, sizeof(icmp_task_message_t));
@@ -114,8 +116,37 @@ void ICMP::processUnicastFrame(void *_packet) {
 			msg.data.echoRequest.identifier = packet->data.echoRequest.identifier;
 			msg.data.echoRequest.sequence = packet->data.echoRequest.sequence;
 
+			// copy the additional data in this packet
+			int payloadSz = this->ipv4->getRxBufferPayloadLength(rx);
+			payloadSz -= 8; // basic ICMP header is 8 bytes long
+
+			if(payloadSz > 0) {
+				// allocate a buffer for the payload
+				void *buffer = pvPortMalloc(payloadSz);
+
+				if(buffer == nullptr) {
+					// we couldn't allocate a buffer :(
+					LOG(S_ERROR, "Can't allocate payload buffer");
+
+					// we still will send the packet, but without the payload
+					msg.data.echoRequest.additionalDataLength = 0;
+				} else {
+					// copy the payload and pass it with the message
+					memcpy(buffer, packet->data.echoRequest.payload, payloadSz);
+
+					msg.data.echoRequest.additionalData = buffer;
+					msg.data.echoRequest.additionalDataLength = payloadSz;
+				}
+			} else {
+				// no payload available
+				msg.data.echoRequest.additionalDataLength = 0;
+			}
+
 			if(this->postMessageToTask(&msg, 0) == false) {
 				LOG(S_ERROR, "Can't respond to echo request");
+
+				// deallocate the buffer we allocated earlier
+				vPortFree(msg.data.echoRequest.additionalData);
 			}
 		}
 	}
@@ -191,7 +222,8 @@ void ICMP::taskSendEchoReplyTo(void *_msg) {
 #endif
 
 	// attempt to get a TX buffer
-	const size_t responseSize = 8;
+	size_t responseSize = 8;
+	responseSize += msg->data.echoRequest.additionalDataLength;
 
 	void *_tx = this->ipv4->getIPv4TxBuffer(responseSize, kIPv4ProtocolICMP);
 	stack_ipv4_tx_packet_t *tx = (stack_ipv4_tx_packet_t *) _tx;
@@ -204,16 +236,27 @@ void ICMP::taskSendEchoReplyTo(void *_msg) {
 
 	// populate the ICMP packet
 	icmp_packet_ipv4_t *icmp = (icmp_packet_ipv4_t *) tx->payload;
-	memset(icmp, 0, responseSize); // clear only the first 8 bytes (that's all we're sending)
+	memset(icmp, 0, 8); // clear only the first 8 bytes (that's all we're sending)
 
 	icmp->type = kICMPTypeEchoReply;
 	icmp->code = 0;
 
-//	icmp->checksum = 0x0000; // inserted by MAC (see RM0008 pg 987)
+	icmp->checksum = 0x0000; // inserted by MAC (see RM0008 pg 987)
 
 	// copy the sequence/ID from the original packet
 	icmp->data.echoRequest.identifier = msg->data.echoRequest.identifier;
 	icmp->data.echoRequest.sequence = msg->data.echoRequest.sequence;
+
+	// copy the payload buffer
+	if(msg->data.echoRequest.additionalDataLength) {
+		memcpy(&icmp->data.echoRequest.payload,
+				msg->data.echoRequest.additionalData,
+				msg->data.echoRequest.additionalDataLength);
+
+		// deallocate the buffer
+		vPortFree(msg->data.echoRequest.additionalData);
+		msg->data.echoRequest.additionalData = nullptr;
+	}
 
 	// set the destination address
 	this->ipv4->setIPv4Destination(tx, destination);

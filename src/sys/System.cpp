@@ -20,7 +20,7 @@ using namespace sys;
  * Callback for the system CPU usage output timer.
  */
 static void SystemCPUOutputTimerCallback(TimerHandle_t timer) {
-//	LOG(S_VERBOSE, "CPU load: %u", System::sharedInstance()->getCPULoad());
+	LOG(S_VERBOSE, "CPU load: %u", System::sharedInstance()->getCPULoad());
 }
 
 

@@ -125,8 +125,8 @@ namespace net {
 			void dbgCheckDMAStatus(void);
 
 			// TODO: determine if the buffers could be smaller
-			static const size_t rxBufSize = (EthMAC::MTU + 100);
-			static const size_t txBufSize = (EthMAC::MTU + 100);
+			static const size_t rxBufSize = (EthMAC::MTU);
+			static const size_t txBufSize = (EthMAC::MTU);
 
 		private:
 			friend void EthMACDebugTimerCallback(TimerHandle_t);

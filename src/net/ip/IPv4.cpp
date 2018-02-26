@@ -21,9 +21,9 @@
 
 
 // enable to log information when packets are received
-#define DEBUG_PACKET_RECEPTION				1
+#define DEBUG_PACKET_RECEPTION				0
 // enable to log information when packets are transmitted
-#define DEBUG_PACKET_TRANSMISSION			1
+#define DEBUG_PACKET_TRANSMISSION			0
 
 
 namespace ip {
@@ -400,6 +400,16 @@ stack_ipv4_addr_t IPv4::getRxBufferDestination(void *_packet) {
 	stack_ipv4_rx_packet_t *packet = (stack_ipv4_rx_packet_t *) _packet;
 
 	return packet->ipv4Header->dest;
+}
+
+/**
+ * Returns the length of the payload of a received packet.
+ */
+size_t IPv4::getRxBufferPayloadLength(void *_packet) {
+	stack_ipv4_rx_packet_t *packet = (stack_ipv4_rx_packet_t *) _packet;
+
+	size_t headerLength = (packet->ipv4Header->version & NET_IPV4_IHL_MASK) * 4;
+	return (packet->ipv4Header->length - headerLength);
 }
 
 

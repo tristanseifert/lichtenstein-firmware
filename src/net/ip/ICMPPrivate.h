@@ -50,6 +50,8 @@ typedef struct __attribute__((__packed__)) {
 		struct __attribute__((__packed__)) {
 			uint16_t identifier;
 			uint16_t sequence;
+
+			uint8_t payload[];
 		} echoRequest;
 	} data;
 } icmp_packet_ipv4_t;
@@ -86,6 +88,10 @@ typedef struct {
 			// these are already in network byte order
 			uint16_t identifier;
 			uint16_t sequence;
+
+			// additional payload in the packet
+			void *additionalData;
+			size_t additionalDataLength;
 		} echoRequest;
 	} data;
 } icmp_task_message_t;

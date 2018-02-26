@@ -63,6 +63,8 @@ namespace ip {
 			stack_ipv4_addr_t getRxBufferSource(void *buffer);
 			stack_ipv4_addr_t getRxBufferDestination(void *buffer);
 
+			size_t getRxBufferPayloadLength(void *buffer);
+
 		private:
 			// starting TTL value for transmitted packets
 			static const uint8_t defaultTTL = 64;
