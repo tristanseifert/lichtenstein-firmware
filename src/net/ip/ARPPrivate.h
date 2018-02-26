@@ -94,6 +94,11 @@ typedef enum {
 	 * Sends an ARP request for the given IP address.
 	 */
 	kARPMessageResolveIP,
+
+	/**
+	 * Transmits a gratuitous ARP.
+	 */
+	kARPMessageSendGratuitous
 } arp_task_message_type_t;
 
 /**

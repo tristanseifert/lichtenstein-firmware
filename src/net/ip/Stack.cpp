@@ -85,7 +85,8 @@ void Stack::linkStateChanged(bool _linkUp) {
 
 	// did the link come up?
 	if(linkUp) {
-
+		// send a gratuitous ARP
+		this->arp->sendGratuitousARP();
 	}
 	// otherwise, we lost the link :(
 	else {

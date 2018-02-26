@@ -101,7 +101,7 @@ namespace net {
 			// timer used for the link monitor
 			TimerHandle_t linkMon = nullptr;
 			// how many ms should elapse between link checks
-			static const int linkMonitorTimerInterval = 1500;
+			static const int linkMonitorTimerInterval = 500;
 
 		// locking
 		protected:

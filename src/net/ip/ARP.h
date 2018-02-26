@@ -70,6 +70,7 @@ namespace ip {
 			void taskEntry(void);
 			void taskGenerateResponse(void *);
 			void taskResolveIP(void *);
+			void taskSendGratuitous(void *);
 
 			bool postMessageToTask(void *, int timeout = portMAX_DELAY);
 

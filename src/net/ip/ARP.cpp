@@ -273,7 +273,14 @@ void ARP::handleARPFrame(void *p) {
  * Transmits a gratuitous ARP for our MAC address.
  */
 void ARP::sendGratuitousARP(void) {
-	// TODO: implement
+	arp_task_message_t msg;
+
+	msg.type = kARPMessageSendGratuitous;
+
+	// send the message
+	if(!this->postMessageToTask(&msg, 0)) {
+		LOG(S_ERROR, "Couldn't request ARP resolution");
+	}
 }
 
 /**
@@ -485,6 +492,11 @@ void ARP::taskEntry(void) {
 			case kARPMessageResolveIP:
 				this->taskResolveIP(&msg);
 				break;
+
+			// transmit a gratuitous ARP for our address
+			case kARPMessageSendGratuitous:
+				this->taskSendGratuitous(&msg);
+				break;
 		}
 	}
 }
@@ -604,6 +616,52 @@ void ARP::taskResolveIP(void *_msg) {
 	// sender MAC/IP are OUR values
 	reply->senderMAC = this->stack->mac;
 	reply->senderIP = this->stack->getIPAddress();
+
+	// byteswap all multibyte fields and transmit
+	this->packetHostToNetwork(reply);
+	this->stack->broadcastTxPacket(tx, kProtocolARP);
+}
+
+/**
+ * Transmits a gratuitous ARP. This uses the "ARP Request" method, which is
+ * better supported with other devices.
+ */
+void ARP::taskSendGratuitous(void *_msg) {
+	stack_tx_packet_t *tx;
+	arp_task_message_t *msg = (arp_task_message_t *) _msg;
+
+	// request a transmit buffer
+	const size_t payloadLength = sizeof(arp_ipv4_packet_t);
+	tx = (stack_tx_packet_t *) this->stack->getTxPacket(payloadLength);
+
+	if(tx == nullptr) {
+		LOG(S_ERROR, "Couldn't get TX buffer for ARP response!");
+		return;
+	}
+
+	// populate the payload
+	arp_ipv4_packet_t *request = &msg->payload.packet;
+	arp_ipv4_packet_t *reply = (arp_ipv4_packet_t *) tx->payload;
+
+#if LOG_SENT_ARP
+	LOG(S_DEBUG, "Sending gratuitous ARP");
+#endif
+
+	reply->hwType = ARP_HW_ETHERNET;
+	reply->protoType = kProtocolIPv4;
+
+	reply->hwAddressLength = sizeof(stack_mac_addr_t);
+	reply->protoAddressLength = sizeof(stack_ipv4_addr_t);
+
+	reply->op = ARP_OP_REQUEST;
+
+	// target and sender protocol address are our addresses
+	reply->targetIP = this->stack->getIPAddress();
+	reply->senderIP = reply->targetIP;
+
+	// sender hardware address is our MAC, target is empty
+	reply->targetMAC = kMACAddressInvalid;
+	reply->senderMAC = this->stack->mac;
 
 	// byteswap all multibyte fields and transmit
 	this->packetHostToNetwork(reply);
