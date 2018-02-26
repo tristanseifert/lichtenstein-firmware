@@ -12,6 +12,8 @@
 
 #include "StackPrivate.h"
 
+#include <LichtensteinApp.h>
+
 #include <cstdint>
 
 /// Request frame
@@ -87,17 +89,54 @@ typedef enum {
 	 * Formulates and sends a response to an ARP request for our MAC address.
 	 */
 	kARPMessageSendReply,
+
+	/**
+	 * Sends an ARP request for the given IP address.
+	 */
+	kARPMessageResolveIP,
 } arp_task_message_type_t;
 
 /**
  * Message passed to the ARP task.
  */
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wpadded"
+
 typedef struct {
 	// message type
 	arp_task_message_type_t type;
 
 	// ARP packet
-	arp_ipv4_packet_t packet;
+	union {
+		arp_ipv4_packet_t packet;
+
+		struct {
+			// signal this semaphore upon response
+			SemaphoreHandle_t completion;
+			// address to resolve
+			stack_ipv4_addr_t address;
+		} request;
+	} payload;
 } arp_task_message_t;
+
+#pragma GCC diagnostic pop
+
+/**
+ * Array of notification entries.
+ */
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wpadded"
+
+typedef struct {
+	// only consider entries with the valid flag set
+	bool valid;
+
+	// signal this semaphore upon response
+	SemaphoreHandle_t completion;
+	// address to resolve
+	stack_ipv4_addr_t address;
+} arp_resolve_notifications_t;
+
+#pragma GCC diagnostic pop
 
 #endif /* NET_IP_ARPPRIVATE_H_ */

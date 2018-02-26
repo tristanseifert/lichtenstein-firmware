@@ -10,6 +10,7 @@
 #include "StackPrivate.h"
 
 #include "ARP.h"
+#include "IPv4.h"
 
 #include "../Network.h"
 
@@ -25,6 +26,7 @@ namespace ip {
 Stack::Stack(Network *n) : net(n) {
 	// allocate the protocol handlers
 	this->arp = new ARP(this);
+	this->ipv4 = new IPv4(this);
 
 	// XXX: testing
 //	this->ip = __builtin_bswap32(0xac100d96);
@@ -46,7 +48,9 @@ Stack::Stack(Network *n) : net(n) {
  * Tears down the TCP/IP stack.
  */
 Stack::~Stack() {
-
+	// delete protocol handlers
+	delete this->arp;
+	delete this->ipv4;
 }
 
 
@@ -147,7 +151,7 @@ void Stack::receivedPacket(void *data, size_t length, uint32_t userData) {
 
 		// call into IPv4 handler
 		case kProtocolIPv4:
-			this->doneWithRxPacket(packet);
+			this->ipv4->handleIPv4Frame(packet);
 			break;
 
 		// IPv6 is currently unimplemented
@@ -178,6 +182,8 @@ void Stack::doneWithRxPacket(void *_inPacket) {
 	// de-allocate its memory
 	vPortFree(packet);
 }
+
+
 
 /**
  * Attempts to acquire a transmit buffer with the specified payload length.
@@ -221,7 +227,22 @@ void *Stack::getTxPacket(size_t length) {
 }
 
 /**
+ * Discards a previously allocated TX packet without sending it.
+ */
+void Stack::discardTXPacket(void *_packet) {
+	stack_tx_packet_t *packet = (stack_tx_packet_t *) _packet;
+
+	// mark it s available with the network driver
+	this->net->releaseTxBuffer(packet->txBuffer);
+
+	// deallocate its memory
+	vPortFree(_packet);
+}
+
+/**
  * Sends a previously configured TX packet.
+ *
+ * @note After this call, the packet structure is deallocated.
  */
 int Stack::sendTxPacket(void *_packet, stack_mac_addr_t destination, uint16_t proto) {
 	stack_tx_packet_t *packet = (stack_tx_packet_t *) _packet;
@@ -237,7 +258,6 @@ int Stack::sendTxPacket(void *_packet, stack_mac_addr_t destination, uint16_t pr
 
 	ethHeader->macSrc = this->mac;
 	ethHeader->macDest = destination;
-//	ethHeader->macDest = kMACAddressBroadcast;
 	ethHeader->etherType = __builtin_bswap16(proto);
 
 	// XXX: debugging
@@ -253,6 +273,44 @@ int Stack::sendTxPacket(void *_packet, stack_mac_addr_t destination, uint16_t pr
 	vPortFree(_packet);
 
 	return 0;
+}
+
+/**
+ * Resolves an IPv4 address to a MAC by the use of ARP.
+ *
+ * @note This call will block.
+ */
+bool Stack::resolveIPToMAC(stack_ipv4_addr_t addr, stack_mac_addr_t *result, int timeout) {
+	// is the address a broadcast address?
+	if(isIPv4Broadcast(addr)) {
+		*result = kMACAddressBroadcast;
+		return true;
+	}
+	// is the address a multicast address?
+	else if(isIPv4Multicast(addr)) {
+		// TODO: convert multicast address
+
+		return true;
+	}
+	// otherwise, perform an ARP lookup
+	else {
+		// is this IP in our subnet?
+		if(this->isIPLocal(addr)) {
+			// if so, just perform an ARP query.
+			return this->arp->resolveIPv4(addr, result, timeout);
+		} else {
+			// if we have a router address, query for it. otherwise give up
+			if(this->routerIp != kIPv4AddressZero) {
+				return this->resolveIPToMAC(this->routerIp, result, timeout);
+			} else {
+				// no router address specified
+				return false;
+			}
+		}
+	}
+
+	// if we get down here, we couldn't resolve the IP
+	return false;
 }
 
 
@@ -273,6 +331,21 @@ void Stack::macToString(stack_mac_addr_t addr, char *out, size_t outLen) {
 	mini_snprintf(out, outLen, "%02x:%02x:%02x:%02x:%02x:%02x", addr.bytes[0],
 			addr.bytes[1], addr.bytes[2], addr.bytes[3], addr.bytes[4],
 			addr.bytes[5]);
+}
+
+/**
+ * Checks whether the given IP is in the same subnet as we are.
+ */
+bool Stack::isIPLocal(stack_ipv4_addr_t addr) {
+	return Stack::isIPInSubnet(addr, this->ip, this->netMask);
+}
+
+/**
+ * Given a netmask, checks whether the netAddr address is in the same subnet
+ * as the `addr` address.
+ */
+bool Stack::isIPInSubnet(stack_ipv4_addr_t addr, stack_ipv4_addr_t netAddr, stack_ipv4_addr_t netmask) {
+	return ((netAddr & netmask) == (addr & netmask));
 }
 
 } /* namespace ip */

@@ -77,6 +77,7 @@ Network::~Network() {
 	vTaskDelete(this->task);
 	vQueueDelete(this->messageQueue);
 	vSemaphoreDelete(this->txBuffersFreeSemaphore);
+	vSemaphoreDelete(this->txBuffersFreeMutex);
 
 	// deallocating the MAC and PHY will reset them
 	delete this->mac;
@@ -318,6 +319,8 @@ void Network::allocBuffers(void) {
 
 
 	// allocate the transmit buffers
+	xSemaphoreTake(this->txBuffersFreeMutex, portMAX_DELAY);
+
 	for(size_t i = 0; i < Network::numTxBuffers; i++) {
 		this->txBuffers[i] = pvPortMalloc(net::EthMAC::txBufSize);
 		memset(this->txBuffers[i], 0, net::EthMAC::txBufSize);
@@ -326,6 +329,8 @@ void Network::allocBuffers(void) {
 		this->txBuffersFree[i] = true;
 //		LOG(S_VERBOSE, "Allocated tx buffer %u at 0x%x", i, this->txBuffers[i]);
 	}
+
+	xSemaphoreGive(this->txBuffersFreeMutex);
 }
 
 
@@ -351,11 +356,20 @@ void Network::setUpTask(void) {
 	}
 
 	// create tx buffer semaphore
-	this->txBuffersFreeSemaphore = xQueueCreateCountingSemaphore(Network::numRxBuffers, Network::numRxBuffers);
+	this->txBuffersFreeSemaphore = xSemaphoreCreateCounting(Network::numRxBuffers, Network::numRxBuffers);
 
 	if(this->txBuffersFreeSemaphore == nullptr) {
 		LOG(S_FATAL, "Couldn't create tx buffers free semaphore");
 	}
+
+	// create lock for tx buffers free array
+	this->txBuffersFreeMutex = xSemaphoreCreateMutex();
+
+	if(this->txBuffersFreeMutex == nullptr) {
+		LOG(S_FATAL, "Couldn't create tx buffers free mutex");
+	}
+
+	xSemaphoreGive(this->txBuffersFreeMutex);
 
 	// now, create the task
 	ok = xTaskCreate(_NetTaskTrampoline, "Network", Network::TaskStackSize,
@@ -489,7 +503,10 @@ void Network::handleTransmittedFrame(network_message_t *msg) {
 
 	// user data is just the buffer index; mark it as free
 //	LOG(S_DEBUG, "Transmitted tx buffer %u", index);
+
+	xSemaphoreTake(this->txBuffersFreeMutex, portMAX_DELAY);
 	this->txBuffersFree[index] = true;
+	xSemaphoreGive(this->txBuffersFreeMutex);
 
 	// increment semaphore
 	xSemaphoreGive(this->txBuffersFreeSemaphore);
@@ -536,9 +553,12 @@ void *Network::getTxBuffer(size_t size) {
 
 	// mark the buffer as used and return it
 //	LOG(S_DEBUG, "Gave tx buffer %u, length %u", freeBuffer, size);
+	xSemaphoreTake(this->txBuffersFreeMutex, portMAX_DELAY);
 
 	this->txBuffersFree[freeBuffer] = false;
 	this->bytesToTransmit[freeBuffer] = size;
+
+	xSemaphoreGive(this->txBuffersFreeMutex);
 
 	return this->txBuffers[freeBuffer];
 }
@@ -569,6 +589,35 @@ void Network::queueTxBuffer(void *addr) {
 
 	// hand it off to the MAC
 	this->mac->transmitPacket(addr, length, index);
+}
+
+/**
+ * Releases the given buffer back to the pool of available buffers without
+ * transmitting it.
+ */
+void Network::releaseTxBuffer(void *addr) {
+	// get the index of the buffer
+	int index = -1;
+
+	for(size_t i = 0; i < Network::numTxBuffers; i++) {
+		// compare addresses
+		if(this->txBuffers[i] == addr) {
+			index = i;
+		}
+	}
+
+	if(index == -1) {
+		LOG(S_ERROR, "Couldn't find tx buffer");
+		return;
+	}
+
+	// mark it as available again
+	xSemaphoreTake(this->txBuffersFreeMutex, portMAX_DELAY);
+	this->txBuffersFree[index] = true;
+	xSemaphoreGive(this->txBuffersFreeMutex);
+
+	// increment semaphore
+	xSemaphoreGive(this->txBuffersFreeSemaphore);
 }
 
 

@@ -96,10 +96,11 @@ class Network {
 		static const size_t numRxBuffers = 8;
 		void *rxBuffers[numRxBuffers];
 
-		static const size_t numTxBuffers = 2;
+		static const size_t numTxBuffers = 4;
 		void *txBuffers[numTxBuffers];
 
 		bool txBuffersFree[numTxBuffers];
+		SemaphoreHandle_t txBuffersFreeMutex = nullptr;
 
 	// network stack
 	private:
@@ -113,7 +114,8 @@ class Network {
 	// API for network stack
 	public:
 		void *getTxBuffer(size_t size);
-		void queueTxBuffer(void *addr);
+		void queueTxBuffer(void *);
+		void releaseTxBuffer(void *);
 
 	private:
 		size_t bytesToTransmit[numTxBuffers];

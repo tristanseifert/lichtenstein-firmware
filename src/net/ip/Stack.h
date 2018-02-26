@@ -24,6 +24,7 @@ class Network;
 
 namespace ip {
 	class ARP;
+	class IPv4;
 
 	class Stack {
 		public:
@@ -42,6 +43,8 @@ namespace ip {
 		public:
 			void receivedPacket(void *data, size_t length, uint32_t userData);
 
+			bool resolveIPToMAC(stack_ipv4_addr_t addr, stack_mac_addr_t *result, int timeout = 100);
+
 		// private calls for packet handling
 		private:
 			void doneWithRxPacket(void *);
@@ -49,6 +52,7 @@ namespace ip {
 
 			void *getTxPacket(size_t);
 
+			void discardTXPacket(void *);
 			int sendTxPacket(void *, stack_mac_addr_t, uint16_t);
 			inline int broadcastTxPacket(void *tx, uint16_t type) {
 				return this->sendTxPacket(tx, kMACAddressBroadcast, type);
@@ -57,13 +61,18 @@ namespace ip {
 		// protocol handlers
 		private:
 			friend class ARP;
+			friend class IPv4;
 
 			ARP *arp = nullptr;
+			IPv4 *ipv4 = nullptr;
 
 		// helpers
 		public:
 			static void ipToString(stack_ipv4_addr_t addr, char *out, size_t outLen);
 			static void macToString(stack_mac_addr_t addr, char *out, size_t outLen);
+
+			bool isIPLocal(stack_ipv4_addr_t addr);
+			static bool isIPInSubnet(stack_ipv4_addr_t addr, stack_ipv4_addr_t netAddr, stack_ipv4_addr_t netmask);
 
 		private:
 			// network handler (used to rx/tx packets)

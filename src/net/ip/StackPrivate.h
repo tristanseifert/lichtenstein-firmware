@@ -41,7 +41,9 @@ typedef enum {
 	// Internet Control Message Protocol
 	kIPv4ProtocolICMP						= 0x01,
 	// Internet Group Management Protocol
-	kIPv4ProtocolIGMP						= 0x02
+	kIPv4ProtocolIGMP						= 0x02,
+	// User Datagram Protocol
+	kIPv4ProtocolUDP							= 0x11
 } stack_protocol_ipv4_t;
 
 

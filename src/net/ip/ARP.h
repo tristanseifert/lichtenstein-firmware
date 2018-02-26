@@ -29,6 +29,8 @@ namespace ip {
 		public:
 			void handleARPFrame(void *);
 
+			bool resolveIPv4(stack_ipv4_addr_t addr, stack_mac_addr_t *result, int timeout);
+
 			void sendGratuitousARP(void);
 			void clearARPCache(void);
 
@@ -51,12 +53,21 @@ namespace ip {
 			// ARP cache
 			arp_ipv4_cache_entry_t cache[cacheEntries];
 
+		// ARP resolution notification list
+		private:
+			// maximum tasks that can be waiting on an IP resolution
+			static const size_t notificationsEntries = 8;
+
+			// list of tasks waiting on an IP resolution
+			arp_resolve_notifications_t notifications[notificationsEntries];
+
 		// ARP task
 		private:
 			friend void _ARPTaskTrampoline(void *);
 
 			void taskEntry(void);
 			void taskGenerateResponse(void *);
+			void taskResolveIP(void *);
 
 			bool postMessageToTask(void *, int timeout = portMAX_DELAY);
 
@@ -74,6 +85,17 @@ namespace ip {
 
 			TaskHandle_t task = nullptr;
 			QueueHandle_t messageQueue = nullptr;
+
+		// byte order helpers
+		private:
+			void convertPacketByteOrder(void *);
+
+			void packetNetworkToHost(void *_packet) {
+				this->convertPacketByteOrder(_packet);
+			}
+			void packetHostToNetwork(void *_packet) {
+				this->convertPacketByteOrder(_packet);
+			}
 
 		private:
 			Stack *stack = nullptr;

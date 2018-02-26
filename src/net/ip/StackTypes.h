@@ -58,6 +58,51 @@ static const stack_mac_addr_t kMACAddressBroadcast = {
 } stack_ipv4_addr_t;*/
 typedef uint32_t stack_ipv4_addr_t;
 
+/**
+ * All zero's (this network broadcast) address.
+ */
+static const stack_ipv4_addr_t kIPv4AddressZero = 0x00000000;
+
+/**
+ * Local broadcast address
+ */
+static const stack_ipv4_addr_t kIPv4AddressBroadcast = 0xFFFFFFFF;
+
+
+
+/**
+ * Determines if an IPv4 address is a multicast address.
+ */
+inline bool isIPv4Multicast(stack_ipv4_addr_t address) {
+	static const stack_ipv4_addr_t multicastMask = 0xE0000000;
+	static const stack_ipv4_addr_t multicastComparison = 0xE0000000;
+
+	return (address & multicastMask) == multicastComparison;
+};
+
+/**
+ * Determines if an IPv4 address is a broadcast address. This will be true
+ * if the address falls into either 0.0.0.0/8 or 255.255.255.255/32.
+ */
+inline bool isIPv4Broadcast(stack_ipv4_addr_t address) {
+	static const stack_ipv4_addr_t thisMask = 0xFF000000;
+	static const stack_ipv4_addr_t thisComparison = 0x00000000;
+
+	static const stack_ipv4_addr_t broadcastAddress = 0xFFFFFFFF;
+
+	// is it in 0.0.0.0/8 (all stations on current network)
+	if((address & thisMask) == thisComparison) {
+		return true;
+	}
+
+	// is the address 255.255.255.255?
+	if(address == broadcastAddress) {
+		return true;
+	}
+
+	// it's not a broadcast address otherwise
+	return false;
+}
 
 
 #endif /* NET_IP_STACKTYPES_H_ */
