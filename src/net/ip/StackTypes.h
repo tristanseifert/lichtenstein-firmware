@@ -29,13 +29,21 @@ typedef union __attribute__((__packed__)) {
 inline bool operator==(const stack_mac_addr_t& lhs, const stack_mac_addr_t& rhs) {
 	return (memcmp(&lhs, &rhs, 6) == 0);
 }
-inline bool operator!=(const stack_mac_addr_t& lhs, const stack_mac_addr_t& rhs) { return !(lhs == rhs); }
+inline bool operator!=(const stack_mac_addr_t& lhs, const stack_mac_addr_t& rhs) {
+	return !(lhs == rhs);
+}
 
 /**
  * Broadcast MAC address
  */
 static const stack_mac_addr_t kMACAddressBroadcast = {
 	.bytes = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF}
+};
+/**
+ * Invalid (all zeroes) MAC address
+ */
+static const stack_mac_addr_t kMACAddressInvalid = {
+	.bytes = {0x00, 0x00, 0x00, 0x00, 0x00, 0x00}
 };
 
 
@@ -74,10 +82,10 @@ static const stack_ipv4_addr_t kIPv4AddressBroadcast = 0xFFFFFFFF;
  * Determines if an IPv4 address is a multicast address.
  */
 inline bool isIPv4Multicast(stack_ipv4_addr_t address) {
-	static const stack_ipv4_addr_t multicastMask = 0xE0000000;
-	static const stack_ipv4_addr_t multicastComparison = 0xE0000000;
+	static const stack_ipv4_addr_t multicastMask = __builtin_bswap32(0xF0000000);
+	static const stack_ipv4_addr_t multicastComparison = __builtin_bswap32(0xE0000000);
 
-	return (address & multicastMask) == multicastComparison;
+	return ((address & multicastMask) == multicastComparison);
 };
 
 /**
@@ -85,10 +93,10 @@ inline bool isIPv4Multicast(stack_ipv4_addr_t address) {
  * if the address falls into either 0.0.0.0/8 or 255.255.255.255/32.
  */
 inline bool isIPv4Broadcast(stack_ipv4_addr_t address) {
-	static const stack_ipv4_addr_t thisMask = 0xFF000000;
-	static const stack_ipv4_addr_t thisComparison = 0x00000000;
+	static const stack_ipv4_addr_t thisMask = __builtin_bswap32(0xFF000000);
+	static const stack_ipv4_addr_t thisComparison = __builtin_bswap32(0x00000000);
 
-	static const stack_ipv4_addr_t broadcastAddress = 0xFFFFFFFF;
+	static const stack_ipv4_addr_t broadcastAddress = __builtin_bswap32(0xFFFFFFFF);
 
 	// is it in 0.0.0.0/8 (all stations on current network)
 	if((address & thisMask) == thisComparison) {

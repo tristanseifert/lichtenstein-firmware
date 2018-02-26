@@ -22,6 +22,7 @@
 
 namespace ip {
 	class Stack;
+	class ICMP;
 
 	class IPv4 {
 		public:
@@ -32,6 +33,7 @@ namespace ip {
 		public:
 			void handleIPv4Frame(void *);
 
+		// byte order conversion helpers
 		private:
 			void convertPacketByteOrder(void *);
 
@@ -47,9 +49,23 @@ namespace ip {
 			void *getIPv4TxBuffer(size_t payloadLength, uint8_t protocol);
 			bool transmitIPv4TxBuffer(void *buffer);
 
+			void setIPv4Destination(void *buffer, stack_ipv4_addr_t addr);
+			void setIPv4Source(void *buffer, stack_ipv4_addr_t addr);
+
+		private:
+			// ID of the current packet
+			uint16_t currentPacketID = 0;
+
+		// API for IP protocols to deal with RX buffers
+		public:
+			void releaseRxBuffer(void *buffer);
+
+			stack_ipv4_addr_t getRxBufferSource(void *buffer);
+			stack_ipv4_addr_t getRxBufferDestination(void *buffer);
+
 		private:
 			// starting TTL value for transmitted packets
-			static const uint8_t defaultTTL = 0xFF;
+			static const uint8_t defaultTTL = 64;
 
 		// Multicast address list
 		private:
@@ -64,6 +80,9 @@ namespace ip {
 			stack_ipv4_addr_t multicastFilter[multicastFilterSize];
 			// reference count for each address
 			size_t multicastFilterRefCount[multicastFilterSize];
+
+		private:
+			ICMP *icmp = nullptr;
 
 		private:
 			Stack *stack = nullptr;

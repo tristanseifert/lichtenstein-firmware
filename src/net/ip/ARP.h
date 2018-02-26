@@ -47,6 +47,8 @@ namespace ip {
 
 			void insertAddress(stack_mac_addr_t mac, stack_ipv4_addr_t addr);
 
+			void dbgDumpCache(void);
+
 		private:
 			// maximum number of entries
 			static const size_t cacheEntries = 16;

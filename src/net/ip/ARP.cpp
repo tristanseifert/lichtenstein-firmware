@@ -16,8 +16,14 @@
 
 #include <cstring>
 
+// produce logging output for received ARP messages
+#define LOG_RECEIVED_ARP						1
+// produce logging output when we send an ARP request/reply
+#define LOG_SENT_ARP							1
 // log caching
 #define LOG_CACHING							1
+// produce logging output for when a task is notified
+#define LOG_RESOLVE_NOTIFICATIONS			1
 
 namespace ip {
 
@@ -32,6 +38,8 @@ void _ARPTaskTrampoline(void *ctx) {
  * Initializes the ARP handler.
  */
 ARP::ARP(Stack *s) : stack(s) {
+	BaseType_t ok;
+
 	// clear ARP cache
 	size_t cacheLength = sizeof(this->cache);
 	memset(this->cache, 0, cacheLength);
@@ -44,9 +52,6 @@ ARP::ARP(Stack *s) : stack(s) {
 
 	LOG(S_INFO, "Notifications list has %u entries", ARP::notificationsEntries);
 
-
-	// set up the message queue
-	BaseType_t ok;
 
 	// create the queue
 	this->messageQueue = xQueueCreate(ARP::messageQueueSize, sizeof(arp_task_message_t));
@@ -75,6 +80,30 @@ ARP::~ARP() {
 
 	if(this->messageQueue) {
 		vQueueDelete(this->messageQueue);
+	}
+}
+
+
+
+/**
+ * Dumps the ARP cache.
+ */
+void ARP::dbgDumpCache(void) {
+	char ipStr[16], macStr[18];
+
+	// iterate over each element
+	for(size_t i = 0; i < ARP::cacheEntries; i++) {
+		// ignore invalid entries
+		if(this->cache[i].valid == false) {
+			continue;
+		}
+
+		// convert the IP and MAC
+		Stack::ipToString(this->cache[i].ip, ipStr, 16);
+		Stack::macToString(this->cache[i].mac, macStr, 18);
+
+		LOG(S_DEBUG, "Entry %u: %s = %s, age %u", i, ipStr, macStr,
+				this->cache[i].age);
 	}
 }
 
@@ -130,20 +159,24 @@ void ARP::discardOldestEntry(void) {
  * Inserts a new IP address into the ARP cache.
  */
 void ARP::insertAddress(stack_mac_addr_t mac, stack_ipv4_addr_t addr) {
+#if LOG_CACHING || LOG_RESOLVE_NOTIFICATIONS
+	char ipStr[16];
+#endif
+#if LOG_CACHING
+	char macStr[18];
+#endif
+
 	// check if we have an entry for this IP, and update it
 	for(size_t i = 0; i < ARP::cacheEntries; i++) {
 		// if the IP matches, we're done
-		if(this->cache[i].ip == addr) {
+		if(this->cache[i].valid && this->cache[i].ip == addr) {
 			this->cache[i].mac = mac;
 
 #if LOG_CACHING
-			char ipStr[16];
 			Stack::ipToString(addr, ipStr, 16);
+			Stack::macToString(mac, macStr, 18);
 
-			char macStr[18];
-		Stack::macToString(mac, macStr, 18);
-
-		LOG(S_DEBUG, "Updated cache entry: %s = %s", macStr, ipStr);
+			LOG(S_DEBUG, "Updated cache entry: %s = %s", macStr, ipStr);
 #endif
 
 			// notify tasks and exit
@@ -153,13 +186,10 @@ void ARP::insertAddress(stack_mac_addr_t mac, stack_ipv4_addr_t addr) {
 
 	// if we get here, we're going to need to insert a new entry
 #if LOG_CACHING
-	char ipStr[16];
 	Stack::ipToString(addr, ipStr, 16);
-
-	char macStr[18];
 	Stack::macToString(mac, macStr, 18);
 
-	LOG(S_DEBUG, "Inserting into cache: %s = %s", macStr, ipStr);
+	LOG(S_DEBUG, "Inserting into cache: %s = %s", ipStr, macStr);
 #endif
 
 	// free up an entry in the cache if it's full
@@ -177,6 +207,8 @@ void ARP::insertAddress(stack_mac_addr_t mac, stack_ipv4_addr_t addr) {
 			this->cache[i].ip = addr;
 			this->cache[i].mac = mac;
 
+			this->cache[i].valid = true;
+
 			// notify tasks and exit
 			goto notify;
 		}
@@ -193,6 +225,14 @@ notify: ;
 		if(this->notifications[i].valid) {
 			// does the IP match?
 			if(this->notifications[i].address == addr) {
+				// logging
+#if LOG_RESOLVE_NOTIFICATIONS
+				Stack::ipToString(this->notifications[i].address, ipStr, 16);
+
+				LOG(S_DEBUG, "Notifying task waiting on %s: 0x%x", ipStr,
+						this->notifications[i].completion);
+#endif
+
 				// give semaphore and mark the entry as invalid
 				xSemaphoreGive(this->notifications[i].completion);
 				this->notifications[i].valid = false;
@@ -233,7 +273,7 @@ void ARP::handleARPFrame(void *p) {
  * Transmits a gratuitous ARP for our MAC address.
  */
 void ARP::sendGratuitousARP(void) {
-
+	// TODO: implement
 }
 
 /**
@@ -263,25 +303,27 @@ void ARP::handleARPRequest(void *_packet) {
 
 	// was it a gratuitous ARP?
 	if(arp->targetIP == arp->senderIP) {
-		// XXX: debugging
+#if LOG_RECEIVED_ARP
+		// debug logging
 		char ip[16];
 		Stack::ipToString(arp->targetIP, ip, 16);
 		LOG(S_DEBUG, "Received gratuitous ARP for address %s", ip);
+#endif
 
 		// if so, let the ARP task handle it
 		this->sendReceivedPacketToTask(arp, 0);
 		return;
 	}
 
-	// XXX: debugging
+#if LOG_RECEIVED_ARP
+	// debug logging
 	char ip[16];
 	Stack::ipToString(arp->targetIP, ip, 16);
-//	LOG(S_DEBUG, "Who has %s?", ip);
+	LOG(S_DEBUG, "Who has %s?", ip);
+#endif
 
 	// is this a request for our MAC address?
 	if(arp->targetIP == this->stack->getIPAddress()) {
-//		LOG(S_DEBUG, "Received request for our IP");
-
 		// learn the MAC/IP of the node requesting our IP
 		this->sendReceivedPacketToTask(arp, 0);
 
@@ -300,10 +342,12 @@ void ARP::handleARPReply(void *_packet) {
 
 	// ignore gratuitious ARP
 	if(arp->senderMAC == arp->targetMAC) {
-		// XXX: debugging
+#if LOG_RECEIVED_ARP
+		// debug logging
 		char ip[16];
 		Stack::ipToString(arp->targetIP, ip, 16);
 		LOG(S_DEBUG, "Ignoring gratuitous ARP for address %s", ip);
+#endif
 
 		return;
 	}
@@ -325,9 +369,11 @@ void ARP::handleARPReply(void *_packet) {
  *    is received, assume the host doesn't exist.
  */
 bool ARP::resolveIPv4(stack_ipv4_addr_t addr, stack_mac_addr_t *result, int timeout) {
+//	this->dbgDumpCache();
+
 	// is it in the cache?
 	for(size_t i = 0; i < ARP::cacheEntries; i++) {
-		if(this->cache[i].ip == addr) {
+		if(this->cache[i].valid && this->cache[i].ip == addr) {
 			*result = this->cache[i].mac;
 			return true;
 		}
@@ -463,10 +509,12 @@ void ARP::taskGenerateResponse(void *_msg) {
 	arp_ipv4_packet_t *request = &msg->payload.packet;
 	arp_ipv4_packet_t *reply = (arp_ipv4_packet_t *) tx->payload;
 
-	// XXX: debugging
+#if LOG_SENT_ARP
+	// debugging
 	char mac[18];
 	Stack::macToString(request->senderMAC, mac, 18);
 	LOG(S_DEBUG, "Sending ARP reply to %s", mac);
+#endif
 
 	reply->hwType = ARP_HW_ETHERNET;
 	reply->protoType = kProtocolIPv4;
@@ -534,10 +582,12 @@ void ARP::taskResolveIP(void *_msg) {
 	arp_ipv4_packet_t *request = &msg->payload.packet;
 	arp_ipv4_packet_t *reply = (arp_ipv4_packet_t *) tx->payload;
 
-	// XXX: debugging
-	char ip[16];
-	Stack::ipToString(msg->payload.request.address, ip, 16);
-	LOG(S_DEBUG, "Sending ARP request for %s", ip);
+#if LOG_SENT_ARP
+	// debugging
+	char ipStr[16];
+	Stack::ipToString(msg->payload.request.address, ipStr, 16);
+	LOG(S_DEBUG, "Sending ARP request for %s", ipStr);
+#endif
 
 	reply->hwType = ARP_HW_ETHERNET;
 	reply->protoType = kProtocolIPv4;

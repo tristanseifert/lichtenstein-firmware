@@ -89,7 +89,7 @@
 #define configCPU_CLOCK_HZ				((unsigned long) 72000000)
 #define configTICK_RATE_HZ				((TickType_t) 100)
 #define configMAX_PRIORITIES				(5)
-#define configMINIMAL_STACK_SIZE			((unsigned short) 150)
+#define configMINIMAL_STACK_SIZE			((unsigned short) 100)
 #define configMAX_TASK_NAME_LEN			(16)
 #define configUSE_16_BIT_TICKS			0
 #define configIDLE_SHOULD_YIELD			1
@@ -98,7 +98,7 @@
 #define configUSE_TIMERS					1
 #define configTIMER_TASK_PRIORITY		2
 #define configTIMER_QUEUE_LENGTH			4
-#define configTIMER_TASK_STACK_DEPTH		(configMINIMAL_STACK_SIZE * 3)
+#define configTIMER_TASK_STACK_DEPTH		(configMINIMAL_STACK_SIZE * 2)
 
 // record size of the stack
 #define configRECORD_STACK_HIGH_ADDRESS	1

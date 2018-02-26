@@ -109,7 +109,7 @@ typedef struct {
 #pragma GCC diagnostic ignored "-Wpadded"
 
 typedef struct {
-	// number of bytes to transmit on the wire
+	// number of bytes to transmit on the wire (including Ethernet header)
 	size_t length;
 	// pointer to the tx buffer
 	void *txBuffer;

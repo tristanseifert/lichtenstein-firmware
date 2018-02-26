@@ -4,13 +4,15 @@
  *  Created on: Feb 25, 2018
  *      Author: tristan
  */
-#define LOG_MODULE "IP4"
+#define LOG_MODULE "IPv4"
 
 #include "IPv4.h"
 #include "IPv4Private.h"
 
 #include "Stack.h"
 #include "StackPrivate.h"
+
+#include "ICMP.h"
 
 #include <LichtensteinApp.h>
 
@@ -33,10 +35,17 @@ IPv4::IPv4(Stack *_s) : stack(_s) {
 	// clear multicast filter
 	memset(this->multicastFilter, 0, sizeof(this->multicastFilter));
 	memset(this->multicastFilterRefCount, 0, sizeof(this->multicastFilterRefCount));
+
+	// set up protocol handlers
+	this->icmp = new ICMP(_s, this);
 }
 
+/**
+ * De-allocates any initialized protocol handlers.
+ */
 IPv4::~IPv4() {
-	// TODO Auto-generated destructor stub
+	// deallocate protocol handlers
+	delete this->icmp;
 }
 
 
@@ -45,47 +54,91 @@ IPv4::~IPv4() {
  * Handles a received IPv4 packet.
  */
 void IPv4::handleIPv4Frame(void *_packet) {
-	stack_rx_packet_t *packet = (stack_rx_packet_t *) _packet;
+	stack_rx_packet_t *rxPacket = (stack_rx_packet_t *) _packet;
 
-	// first, swap all the multi-byte fields
-	net_ipv4_packet_t *ipv4 = (net_ipv4_packet_t *) packet->payload;
-	this->packetNetworkToHost(ipv4);
+	// make sure the version is 4
+	net_ipv4_packet_t *_ipHeader = (net_ipv4_packet_t *) rxPacket->payload;
+	uint8_t version = (_ipHeader->version & NET_IPV4_VERSION_MASK) >> 4;
+
+	if(version != NET_IPV4_VERSION_4) {
+		// we should never have to deal with this
+		LOG(S_ERROR, "Received IPv4 frame with version %u", version);
+
+		this->stack->doneWithRxPacket(rxPacket);
+		return;
+	}
+
+	// create an RX packet
+	stack_ipv4_rx_packet_t *rx;
+	rx = (stack_ipv4_rx_packet_t *) pvPortMalloc(sizeof(stack_ipv4_rx_packet_t));
+
+	if(!rx) {
+		// if we couldn't allocate an RX struct, return the packet to the stack
+		LOG(S_ERROR, "Couldn't allocate RX buffer");
+
+		this->stack->doneWithRxPacket(rxPacket);
+		return;
+	}
+
+	rx->stackBuffer = rxPacket;
+	rx->ipv4Header = (net_ipv4_packet_t *) rxPacket->payload;
+	this->packetNetworkToHost(rx->ipv4Header);
+
+	size_t headerLength = (rx->ipv4Header->version & NET_IPV4_IHL_MASK) * 4;
+	rx->payload = ((uint8_t *) rxPacket->payload) + headerLength;
+
 
 #if DEBUG_PACKET_RECEPTION
 	// debugging
 	char srcIp[16], destIp[16];
-	Stack::ipToString(ipv4->source, srcIp, 16);
-	Stack::ipToString(ipv4->dest, destIp, 16);
+	Stack::ipToString(rx->ipv4Header->source, srcIp, 16);
+	Stack::ipToString(rx->ipv4Header->dest, destIp, 16);
 #endif
+
 
 	// check if the destination IP matches our IP
-	if(ipv4->dest == this->stack->getIPAddress()) {
+	if(rx->ipv4Header->dest == this->stack->getIPAddress()) {
 #if DEBUG_PACKET_RECEPTION
-		LOG(S_DEBUG, "Received unicast from %s to %s, protocol 0x%02x", srcIp, destIp, ipv4->protocol);
+		LOG(S_DEBUG, "Received unicast from %s to %s, protocol 0x%02x", srcIp, destIp, rx->ipv4Header->protocol);
 #endif
 
-		this->stack->doneWithRxPacket(packet);
+		// call into the appropriate protocol handler
+		switch(rx->ipv4Header->protocol) {
+			// handle unicasted ICMP
+			case kIPv4ProtocolICMP:
+				this->icmp->processUnicastFrame(rx);
+				break;
+
+			// unhandled protocol
+			default:
+				this->releaseRxBuffer(rx);
+				break;
+		}
 	}
 	// is it a broadcast message?
-	else if(isIPv4Broadcast(ipv4->dest)) {
+	else if(isIPv4Broadcast(rx->ipv4Header->dest)) {
 #if DEBUG_PACKET_RECEPTION
-		LOG(S_DEBUG, "Received broadcast from %s to %s, protocol 0x%02x", srcIp, destIp, ipv4->protocol);
+		LOG(S_DEBUG, "Received broadcast from %s to %s, protocol 0x%02x", srcIp, destIp, rx->ipv4Header->protocol);
 #endif
 
-		this->stack->doneWithRxPacket(packet);
+		// TODO: handle packet
+
+		this->releaseRxBuffer(rx);
 	}
 	// lastly, is it a multicast message?
-	else if(isIPv4Multicast(ipv4->dest)) {
+	else if(isIPv4Multicast(rx->ipv4Header->dest)) {
 		// check if we've registered for this multicast address
-		if(this->isMulticastAddressAllowed(ipv4->dest)) {
+		if(this->isMulticastAddressAllowed(rx->ipv4Header->dest)) {
 #if DEBUG_PACKET_RECEPTION
-			LOG(S_DEBUG, "Received multicast from %s to %s, protocol 0x%02x", srcIp, destIp, ipv4->protocol);
+			LOG(S_DEBUG, "Received multicast from %s to %s, protocol 0x%02x", srcIp, destIp, rx->ipv4Header->protocol);
 #endif
 
-			this->stack->doneWithRxPacket(packet);
+			// TODO: handle packet
+
+			this->releaseRxBuffer(rx);
 		} else {
 			// ignore the frame
-			this->stack->doneWithRxPacket(packet);
+			this->releaseRxBuffer(rx);
 		}
 	}
 }
@@ -204,23 +257,32 @@ void *IPv4::getIPv4TxBuffer(size_t payloadLength, uint8_t protocol) {
 
 	// set up the packet
 	packet->payloadLength = payloadLength;
+	packet->sourceAddrSet = false;
+
 	packet->stackBuffer = tx;
+
 	packet->ipv4Header = (net_ipv4_packet_t *) tx->payload;
 	packet->payload = ((uint8_t *) tx->payload) + sizeof(net_ipv4_packet_t);
 
+	memset(packet->ipv4Header, 0, sizeof(net_ipv4_packet_t));
+
 	// version 4, header length of 5 4-byte words
 	packet->ipv4Header->version = (NET_IPV4_VERSION_4 << 4) & NET_IPV4_VERSION_MASK;
-	packet->ipv4Header->version = (5 << 4) & NET_IPV4_IHL_MASK;
+	packet->ipv4Header->version |= (5) & NET_IPV4_IHL_MASK;
 
 	// set the length (header size plus payload)
 	packet->ipv4Header->length = (uint16_t) (sizeof(net_ipv4_packet_t) + payloadLength);
 
 	// checksum is computed by the MAC
-	packet->ipv4Header->headerChecksum = 0xFFFF;
+	packet->ipv4Header->headerChecksum = 0x0000;
 
 	// copy protocol and set TTL to default
 	packet->ipv4Header->protocol = protocol;
 	packet->ipv4Header->ttl = IPv4::defaultTTL;
+
+	// clear any fragment flags and set ID
+	packet->ipv4Header->id = this->currentPacketID++;
+	packet->ipv4Header->fragmentFlags = 0;
 
 	// done!
 	return packet;
@@ -243,20 +305,26 @@ bool IPv4::transmitIPv4TxBuffer(void *_buffer) {
 
 #if DEBUG_PACKET_TRANSMISSION
 	// debug logging
-	char destIp[16];
-	Stack::ipToString(packet->ipv4Header->dest, destIp, 16);
+	char destIpStr[16];
+	Stack::ipToString(packet->ipv4Header->dest, destIpStr, 16);
 
-	LOG(S_DEBUG, "Transmitting packet to %s (length %u, proto 0x%02x)", destIp,
+	LOG(S_DEBUG, "Transmitting packet to %s (length %u, proto 0x%02x)", destIpStr,
 			packet->payloadLength, packet->ipv4Header->protocol);
 #endif
 
+	// if the source IP hasn't been set, fill in ours now
+	if(!packet->sourceAddrSet) {
+		packet->ipv4Header->source = this->stack->getIPAddress();
+		packet->sourceAddrSet = true;
+	}
+
 	// convert the destination IP address to a MAC address
-	stack_mac_addr_t destMAC;
+	stack_mac_addr_t destMAC = kMACAddressInvalid;
 	success = stack->resolveIPToMAC(packet->ipv4Header->dest, &destMAC);
 
 	if(!success) {
 #if DEBUG_PACKET_TRANSMISSION
-		LOG(S_DEBUG, "Couldn't resolve IP %s to MAC", destIp);
+		LOG(S_DEBUG, "Couldn't resolve IP %s to MAC", destIpStr);
 #endif
 
 		// if we couldn't find a MAC address, discard the packet
@@ -264,14 +332,74 @@ bool IPv4::transmitIPv4TxBuffer(void *_buffer) {
 		return false;
 	}
 
-	// transmit the packet
+#if DEBUG_PACKET_TRANSMISSION
+	char destMACStr[18];
+	Stack::macToString(destMAC, destMACStr, 18);
+
+	LOG(S_DEBUG, "Sending packet for %s to %s", destIpStr, destMACStr);
+#endif
+
+	// swap byte order and transmit
+	this->packetHostToNetwork(packet->ipv4Header);
 	this->stack->sendTxPacket(packet->stackBuffer, destMAC, kProtocolIPv4);
 
-	// deallocate it
+	// deallocate the buffer struct we created
 	vPortFree(_buffer);
 
 	// if we get down here, assume success
 	return true;
+}
+
+/**
+ * Sets the destination IP address for the IP packet.
+ */
+void IPv4::setIPv4Destination(void *_buffer, stack_ipv4_addr_t addr) {
+	stack_ipv4_tx_packet_t *packet = (stack_ipv4_tx_packet_t *) _buffer;
+
+	packet->ipv4Header->dest = addr;
+}
+
+/**
+ * Sets the source IP address for the IP packet.
+ */
+void IPv4::setIPv4Source(void *_buffer, stack_ipv4_addr_t addr) {
+	stack_ipv4_tx_packet_t *packet = (stack_ipv4_tx_packet_t *) _buffer;
+
+	packet->ipv4Header->source = addr;
+	packet->sourceAddrSet = true;
+}
+
+
+
+/**
+ * Releases a receive buffer.
+ */
+void IPv4::releaseRxBuffer(void *_packet) {
+	stack_ipv4_rx_packet_t *packet = (stack_ipv4_rx_packet_t *) _packet;
+
+	// return the RX buffer to the stack
+	this->stack->doneWithRxPacket(packet->stackBuffer);
+
+	// free the packet structure itself
+	vPortFree(_packet);
+}
+
+/**
+ * Returns the source address of this packet.
+ */
+stack_ipv4_addr_t IPv4::getRxBufferSource(void *_packet) {
+	stack_ipv4_rx_packet_t *packet = (stack_ipv4_rx_packet_t *) _packet;
+
+	return packet->ipv4Header->source;
+}
+
+/**
+ * Returns the destination address of this packet.
+ */
+stack_ipv4_addr_t IPv4::getRxBufferDestination(void *_packet) {
+	stack_ipv4_rx_packet_t *packet = (stack_ipv4_rx_packet_t *) _packet;
+
+	return packet->ipv4Header->dest;
 }
 
 
@@ -286,11 +414,10 @@ bool IPv4::transmitIPv4TxBuffer(void *_buffer) {
 void IPv4::convertPacketByteOrder(void *_packet) {
 	net_ipv4_packet_t *ipv4 = (net_ipv4_packet_t *) _packet;
 
-	// just swap bytes
 	ipv4->length = __builtin_bswap16(ipv4->length);
 	ipv4->id = __builtin_bswap16(ipv4->id);
 	ipv4->fragmentFlags = __builtin_bswap16(ipv4->fragmentFlags);
-	ipv4->fragmentFlags = __builtin_bswap16(ipv4->headerChecksum);
+	ipv4->headerChecksum = __builtin_bswap16(ipv4->headerChecksum);
 }
 
 } /* namespace ip */

@@ -81,11 +81,31 @@ typedef struct {
 	// pointer to the IPv4 header
 	net_ipv4_packet_t *ipv4Header;
 
+	// set when the source address has been set
+	bool sourceAddrSet;
+
 	// pointer to payload (directly after ipv4 header)
 	void *payload;
 	// length of payload
 	size_t payloadLength;
 } stack_ipv4_tx_packet_t;
+
+/**
+ * IPv4 receive buffer; this encapsulates a stack RX buffer and adds a small
+ * pointer to the IPv4 packet and the packet's payload.
+ */
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wpadded"
+
+typedef struct {
+	// stack rx buffer
+	stack_rx_packet_t *stackBuffer;
+
+	// pointer to the IPv4 header
+	net_ipv4_packet_t *ipv4Header;
+	// pointer to payload (directly after ipv4 header)
+	void *payload;
+} stack_ipv4_rx_packet_t;
 
 #pragma GCC diagnostic pop
 

@@ -96,7 +96,7 @@ namespace net {
 			// how many writes may be pending at a time
 			static const size_t TransmitQueueDepth = 8;
 			// size of the stack for the write task
-			static const size_t TransmitTaskStackSize = 200;
+			static const size_t TransmitTaskStackSize = 100;
 			// write task priority
 			static const size_t TransmitTaskPriority = 2;
 

@@ -18,6 +18,16 @@
 
 #include <cstring>
 
+
+
+// produce logging output when resolving IP addresses to MAC addresses
+#define LOG_ADDRESS_TO_MAC						1
+// produce logging output for sending frames
+#define LOG_TRANSMIT								1
+
+
+
+
 namespace ip {
 
 /**
@@ -108,6 +118,14 @@ void Stack::receivedPacket(void *data, size_t length, uint32_t userData) {
 	stack_rx_packet_t *packet;
 	packet = (stack_rx_packet_t *) pvPortMalloc(sizeof(stack_rx_packet_t));
 
+	if(packet == nullptr) {
+		// return if we couldn't allocate one (BAD)
+		LOG(S_ERROR, "Couldn't allocate RX packet");
+
+		this->net->releaseRxPacket(userData);
+		return;
+	}
+
 	memset(packet, 0, sizeof(stack_rx_packet_t));
 
 	packet->length = length;
@@ -141,6 +159,7 @@ void Stack::receivedPacket(void *data, size_t length, uint32_t userData) {
 		// otherwise, it has to be an unicast packet
 		packet->unicast = true;
 	}
+
 
 	// run the appropriate handler for the L2 protocol
 	switch(packet->l2Proto) {
@@ -211,6 +230,9 @@ void *Stack::getTxPacket(size_t length) {
 		return nullptr;
 	}
 
+	// clear the buffer
+	memset(txBuffer, 0, totalLength);
+
 	// allocate a packet
 	stack_tx_packet_t *packet;
 	packet = (stack_tx_packet_t *) pvPortMalloc(sizeof(stack_tx_packet_t));
@@ -260,11 +282,12 @@ int Stack::sendTxPacket(void *_packet, stack_mac_addr_t destination, uint16_t pr
 	ethHeader->macDest = destination;
 	ethHeader->etherType = __builtin_bswap16(proto);
 
-	// XXX: debugging
+#if LOG_TRANSMIT
 	char macSrc[18], macDest[18];
 	Stack::macToString(ethHeader->macSrc, macSrc, 18);
 	Stack::macToString(ethHeader->macDest, macDest, 18);
-	LOG(S_DEBUG, "Sending ethernet frame from %s to %s, type 0x%04x", macSrc, macDest, proto);
+	LOG(S_DEBUG, "Sending Ethernet frame from %s to %s, type 0x%04x", macSrc, macDest, proto);
+#endif
 
 	// send it!
 	this->net->queueTxBuffer(packet->txBuffer);
@@ -275,12 +298,21 @@ int Stack::sendTxPacket(void *_packet, stack_mac_addr_t destination, uint16_t pr
 	return 0;
 }
 
+
+
 /**
  * Resolves an IPv4 address to a MAC by the use of ARP.
  *
  * @note This call will block.
  */
 bool Stack::resolveIPToMAC(stack_ipv4_addr_t addr, stack_mac_addr_t *result, int timeout) {
+#if LOG_ADDRESS_TO_MAC
+	// logging
+	char ipStr[16];
+	Stack::ipToString(addr, ipStr, 16);
+	LOG(S_DEBUG, "Resolving IP address %s", ipStr);
+#endif
+
 	// is the address a broadcast address?
 	if(isIPv4Broadcast(addr)) {
 		*result = kMACAddressBroadcast;
@@ -289,8 +321,7 @@ bool Stack::resolveIPToMAC(stack_ipv4_addr_t addr, stack_mac_addr_t *result, int
 	// is the address a multicast address?
 	else if(isIPv4Multicast(addr)) {
 		// TODO: convert multicast address
-
-		return true;
+		return false;
 	}
 	// otherwise, perform an ARP lookup
 	else {
@@ -301,6 +332,10 @@ bool Stack::resolveIPToMAC(stack_ipv4_addr_t addr, stack_mac_addr_t *result, int
 		} else {
 			// if we have a router address, query for it. otherwise give up
 			if(this->routerIp != kIPv4AddressZero) {
+#if LOG_ADDRESS_TO_MAC
+				LOG(S_DEBUG, "Address outside subnet, resolving router instead");
+#endif
+
 				return this->resolveIPToMAC(this->routerIp, result, timeout);
 			} else {
 				// no router address specified
