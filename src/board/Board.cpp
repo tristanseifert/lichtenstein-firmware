@@ -36,31 +36,31 @@
 #define STATUS3_GPIO_CLOCK				RCC_APB2Periph_GPIOD
 
 // TEST_SW0
-#define TEST_SW0_PORT					GPIOC
-#define TEST_SW0_PIN						GPIO_Pin_13
-#define TEST_SW0_GPIO_CLOCK				RCC_APB2Periph_GPIOC
+#define TEST_SW0_PORT					GPIOE
+#define TEST_SW0_PIN						GPIO_Pin_10
+#define TEST_SW0_GPIO_CLOCK				RCC_APB2Periph_GPIOE
 
 #define TEST_SW0_GPIO_EXTI				EXTI15_10_IRQHandler
-#define TEST_SW0_GPIO_EXTI_PORT			GPIO_PortSourceGPIOC
-#define TEST_SW0_GPIO_EXTI_PIN			GPIO_PinSource13
-#define TEST_SW0_GPIO_EXTI_LINE			EXTI_Line13
+#define TEST_SW0_GPIO_EXTI_PORT			GPIO_PortSourceGPIOE
+#define TEST_SW0_GPIO_EXTI_PIN			GPIO_PinSource10
+#define TEST_SW0_GPIO_EXTI_LINE			EXTI_Line10
 #define TEST_SW0_GPIO_EXTI_NVIC_IRQ		EXTI15_10_IRQn
 #define TEST_SW0_GPIO_EXTI_PRIORITY		(configMAX_SYSCALL_INTERRUPT_PRIORITY >> 4)
 
 // TEST_SW1
-#define TEST_SW1_PORT					GPIOB
-#define TEST_SW1_PIN						GPIO_Pin_2
-#define TEST_SW1_GPIO_CLOCK				RCC_APB2Periph_GPIOB
+#define TEST_SW1_PORT					GPIOE
+#define TEST_SW1_PIN						GPIO_Pin_11
+#define TEST_SW1_GPIO_CLOCK				RCC_APB2Periph_GPIOE
 
 #define TEST_SW1_GPIO_EXTI				EXTI2_IRQHandler
-#define TEST_SW1_GPIO_EXTI_PORT			GPIO_PortSourceGPIOB
-#define TEST_SW1_GPIO_EXTI_PIN			GPIO_PinSource2
-#define TEST_SW1_GPIO_EXTI_LINE			EXTI_Line2
-#define TEST_SW1_GPIO_EXTI_NVIC_IRQ		EXTI2_IRQn
+#define TEST_SW1_GPIO_EXTI_PORT			GPIO_PortSourceGPIOE
+#define TEST_SW1_GPIO_EXTI_PIN			GPIO_PinSource11
+#define TEST_SW1_GPIO_EXTI_LINE			EXTI_Line11
+#define TEST_SW1_GPIO_EXTI_NVIC_IRQ		EXTI15_10_IRQn
 #define TEST_SW1_GPIO_EXTI_PRIORITY		(configMAX_SYSCALL_INTERRUPT_PRIORITY >> 4)
 
 // when set, the EXTI is shared among both test switch inputs
-#define TEST_SW_GPIO_EXTI_SHARED			0
+#define TEST_SW_GPIO_EXTI_SHARED			(TEST_SW0_GPIO_EXTI_NVIC_IRQ == TEST_SW1_GPIO_EXTI_NVIC_IRQ)
 
 // hardware config for EEPROM
 // I2C peripheral to use
@@ -112,7 +112,7 @@ Board *Board::sharedInstance() {
  */
 Board::Board() {
 	this->initStatusGPIOs();
-//	this->initTestGPIOs();
+	this->initTestGPIOs();
 	this->initConfigEEPROM();
 }
 Board::~Board() {
@@ -160,22 +160,63 @@ void Board::initStatusGPIOs(void) {
 }
 
 /**
+ * Gets the GPIO and pin for the specified LED.
+ */
+void Board::getGPIOForLED(board_led_t led, GPIO_TypeDef **port, uint16_t *pin) {
+	switch(led) {
+		case kBoardLEDIdle:
+			*port = STATUS0_PORT;
+			*pin = STATUS0_PIN;
+			break;
+
+		case kBoardLEDIPAct:
+			*port = STATUS1_PORT;
+			*pin = STATUS1_PIN;
+			break;
+
+		case kBoardLEDOutputAct:
+			*port = STATUS2_PORT;
+			*pin = STATUS2_PIN;
+			break;
+
+		case kBoardLEDError:
+			*port = STATUS3_PORT;
+			*pin = STATUS3_PIN;
+			break;
+	}
+}
+
+/**
  * Sets the state of the status indicators. Each LED on the board has an index:
  * - 0: idle
  * - 1: IP Act
  * - 2: LED out active
  * - 3: Error
  */
-void Board::setLED(board_led_t led, uint8_t state) {
-	if(led == kBoardLEDIdle) {
-		GPIO_WriteBit(STATUS0_PORT, STATUS0_PIN, (state == 1 ? Bit_SET : Bit_RESET));
-	} else if(led == kBoardLEDIPAct) {
-		GPIO_WriteBit(STATUS1_PORT, STATUS1_PIN, (state == 1 ? Bit_SET : Bit_RESET));
-	} else if(led == kBoardLEDOutputAct) {
-		GPIO_WriteBit(STATUS2_PORT, STATUS2_PIN, (state == 1 ? Bit_SET : Bit_RESET));
-	} else if(led == kBoardLEDError) {
-		GPIO_WriteBit(STATUS3_PORT, STATUS3_PIN, (state == 1 ? Bit_SET : Bit_RESET));
-	}
+void Board::setLED(board_led_t led, bool set) {
+	// get the GPIO pin
+	GPIO_TypeDef *port = nullptr;
+	uint16_t pin = 0;
+
+	this->getGPIOForLED(led, &port, &pin);
+
+	// set value
+	GPIO_WriteBit(port, pin, (set ? Bit_SET : Bit_RESET));
+}
+
+/**
+ * Toggles an existing LED.
+ */
+void Board::toggleLED(board_led_t led) {
+	// get the GPIO pin
+	GPIO_TypeDef *port = nullptr;
+	uint16_t pin = 0;
+
+	this->getGPIOForLED(led, &port, &pin);
+
+	// invert the state
+	int state = (GPIO_ReadOutputDataBit(port, pin) == Bit_RESET);
+	GPIO_WriteBit(port, pin, (state == 1 ? Bit_SET : Bit_RESET));
 }
 
 
@@ -215,31 +256,35 @@ void Board::initTestGPIOs(void) {
 	GPIO_EXTILineConfig(TEST_SW0_GPIO_EXTI_PORT, TEST_SW0_GPIO_EXTI_PIN);
 	GPIO_EXTILineConfig(TEST_SW1_GPIO_EXTI_PORT, TEST_SW1_GPIO_EXTI_PIN);
 
-	// configure the SW0 exti and then enable the interrupt
+	// configure the SW0 EXTI
 	exti.EXTI_Line = TEST_SW0_GPIO_EXTI_LINE;
 	exti.EXTI_Mode = EXTI_Mode_Interrupt;
 	exti.EXTI_Trigger = EXTI_Trigger_Rising_Falling;
 	exti.EXTI_LineCmd = ENABLE;
 	EXTI_Init(&exti);
 
-	nvic.NVIC_IRQChannel = TEST_SW0_GPIO_EXTI_NVIC_IRQ;
-	nvic.NVIC_IRQChannelPreemptionPriority = TEST_SW0_GPIO_EXTI_PRIORITY;
-	nvic.NVIC_IRQChannelSubPriority = 0x0F;
-	nvic.NVIC_IRQChannelCmd = ENABLE;
-	NVIC_Init(&nvic);
-
-	// configure the SW1 exti and then enable the interrupt
+	// configure the SW1 EXTI
 	exti.EXTI_Line = TEST_SW1_GPIO_EXTI_LINE;
 	exti.EXTI_Mode = EXTI_Mode_Interrupt;
 	exti.EXTI_Trigger = EXTI_Trigger_Rising_Falling;
 	exti.EXTI_LineCmd = ENABLE;
 	EXTI_Init(&exti);
 
+	// enable SW0 EXTI interrupt
+	nvic.NVIC_IRQChannel = TEST_SW0_GPIO_EXTI_NVIC_IRQ;
+	nvic.NVIC_IRQChannelPreemptionPriority = TEST_SW0_GPIO_EXTI_PRIORITY;
+	nvic.NVIC_IRQChannelSubPriority = 0x0F;
+	nvic.NVIC_IRQChannelCmd = ENABLE;
+	NVIC_Init(&nvic);
+
+	// enable SW1 EXTI interrupt
+#if TEST_SW_GPIO_EXTI_SHARED == 0
 	nvic.NVIC_IRQChannel = TEST_SW1_GPIO_EXTI_NVIC_IRQ;
 	nvic.NVIC_IRQChannelPreemptionPriority = TEST_SW1_GPIO_EXTI_PRIORITY;
 	nvic.NVIC_IRQChannelSubPriority = 0x0F;
 	nvic.NVIC_IRQChannelCmd = ENABLE;
 	NVIC_Init(&nvic);
+#endif
 }
 
 /**
@@ -252,15 +297,34 @@ void Board::testSwIRQ(void) {
 
 	this->testSwState = (uint8_t) ((sw0 ? 0x01 : 0x00) | (sw1 ? 0x02 : 0x00));
 
-//	this->setLED(kBoardLEDIPAct, sw0);
-//	this->setLED(kBoardLEDOutputAct, sw1);
+	// TODO: handle this
 }
 
 /**
  * Handles the IRQ for the TEST_SW0 external interrupt.
  */
 extern "C" void TEST_SW0_GPIO_EXTI(void) {
-	Board::TestSwIRQNotify();
+#if TEST_SW_GPIO_EXTI_SHARED
+	// check that the correct lines changed
+	if(EXTI_GetITStatus(TEST_SW0_GPIO_EXTI_LINE) != RESET ||
+	   EXTI_GetITStatus(TEST_SW1_GPIO_EXTI_LINE) != RESET) {
+		// call ISR handler
+		Board::TestSwIRQNotify();
+	}
+
+	// acknowledge interrupt
+	EXTI_ClearITPendingBit(TEST_SW0_GPIO_EXTI_LINE);
+	EXTI_ClearITPendingBit(TEST_SW1_GPIO_EXTI_LINE);
+#else
+	// check that the correct lines changed
+	if(EXTI_GetITStatus(TEST_SW0_GPIO_EXTI_LINE) != RESET) {
+		// call ISR handler
+		Board::TestSwIRQNotify();
+	}
+
+	// acknowledge interrupt
+	EXTI_ClearITPendingBit(TEST_SW0_GPIO_EXTI_LINE);
+#endif
 }
 
 /**
@@ -269,7 +333,14 @@ extern "C" void TEST_SW0_GPIO_EXTI(void) {
  */
 #if !TEST_SW_GPIO_EXTI_SHARED
 extern "C" void TEST_SW1_GPIO_EXTI(void) {
-	Board::TestSwIRQNotify();
+	// check that the correct line changed
+	if(EXTI_GetITStatus(TEST_SW1_GPIO_EXTI_LINE) != RESET) {
+		// call ISR handler
+		Board::TestSwIRQNotify();
+	}
+
+	// acknowledge interrupt
+	EXTI_ClearITPendingBit(TEST_SW1_GPIO_EXTI_LINE);
 }
 #endif
 

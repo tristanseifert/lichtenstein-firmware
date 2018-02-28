@@ -57,13 +57,9 @@ UDP::~UDP() {
 void UDP::handleReceivedFrame(void *_rx, int type) {
 	stack_ipv4_rx_packet_t *rx = (stack_ipv4_rx_packet_t *) _rx;
 
-	// debugging
-	this->ipv4->releaseRxBuffer(rx);
-	return;
-
 	// byteswap the UDP header
 	udp_header_ipv4_t *header = (udp_header_ipv4_t *) rx->payload;
-	this->packetNetworkToHost(rx);
+	this->packetNetworkToHost(header);
 
 	// check if any tasks are listening on this port
 	for(size_t i = 0; i < UDP::listenPortsEntries; i++) {

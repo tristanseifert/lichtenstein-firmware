@@ -8,11 +8,8 @@
 
 #include "Output.h"
 
-#include "cmsis_device.h"
-
-#include "FreeRTOSConfig.h"
-#include "FreeRTOS.h"
-#include "semphr.h"
+#include <LichtensteinApp.h>
+#include "../board/Board.h"
 
 #if HW == HW_MUSTARD
 // level shifter output enable (active low): PB14
@@ -248,6 +245,9 @@ void Output::setOutputEnable(bool enable) {
 	}
 
 	GPIO_WriteBit(LED_OE_PORT, LED_OE_PIN, state);
+
+	// set LED
+	Board::sharedInstance()->setLED(Board::kBoardLEDOutputAct, enable);
 }
 
 /**

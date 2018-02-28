@@ -117,10 +117,6 @@ void Network::readMACFromEEPROM(void) {
 void Network::setUpClocks(void) {
 	int timeout;
 
-	// get the frequencies of clocks
-	RCC_ClocksTypeDef clocks;
-	RCC_GetClocksFreq(&clocks);
-
 	// configure PLL3 for 50MHz
 	RCC_PREDIV2Config(RCC_PREDIV2_Div5);
 	RCC_PREDIV1Config(RCC_PREDIV1_Source_PLL2, RCC_PREDIV1_Div5);
@@ -160,10 +156,6 @@ void Network::setUpClocks(void) {
 	// for MII, just output the external oscillator clock
 	RCC_MCOConfig(RCC_MCO_XT1);
 #endif
-
-
-	RCC_GetClocksFreq(&clocks);
-	LOG(S_INFO, "ADCCLK: %d, HCLK: %d, PCLK1: %d, PCLK2: %d, SYSCLK: %d", clocks.ADCCLK_Frequency, clocks.HCLK_Frequency, clocks.PCLK1_Frequency, clocks.PCLK2_Frequency, clocks.SYSCLK_Frequency);
 }
 
 /**

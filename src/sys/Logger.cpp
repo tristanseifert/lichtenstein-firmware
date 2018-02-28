@@ -63,6 +63,7 @@ SemaphoreHandle_t gBufferMutex = nullptr;
 #define LOG_UART_RX_PIN						GPIO_Pin_6
 
 // enable DMA-driven transmission
+// TODO: fix DMA. it's broken
 #define LOG_UART_USE_DMA_TX					0
 
 // DMA configuration

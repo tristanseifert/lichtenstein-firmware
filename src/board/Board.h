@@ -8,12 +8,7 @@
 #ifndef BOARD_BOARD_H_
 #define BOARD_BOARD_H_
 
-#include "FreeRTOSConfig.h"
-#include "FreeRTOS.h"
-#include "semphr.h"
-
-#include <cstdint>
-#include <cstddef>
+#include <LichtensteinApp.h>
 
 #include "EEPROMBoardConfig.h"
 
@@ -33,7 +28,11 @@ class Board {
 			kBoardLEDError
 		} board_led_t;
 
-		void setLED(board_led_t led, uint8_t state);
+		void toggleLED(board_led_t led);
+		void setLED(board_led_t led, bool set);
+
+	private:
+		void getGPIOForLED(board_led_t, GPIO_TypeDef **, uint16_t *);
 
 	private:
 		Board();

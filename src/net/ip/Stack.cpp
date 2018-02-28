@@ -15,6 +15,7 @@
 #include "../Network.h"
 
 #include <LichtensteinApp.h>
+#include "../board/Board.h"
 
 #include <cstring>
 
@@ -114,6 +115,9 @@ void Stack::receivedPacket(void *data, size_t length, uint32_t userData) {
 		this->net->releaseRxPacket(userData);
 		return;
 	}
+
+	// toggle IP activity LED
+	Board::sharedInstance()->toggleLED(Board::kBoardLEDIPAct);
 
 	// allocate a packet descriptor to use and initialize it
 	stack_rx_packet_t *packet;
@@ -275,6 +279,9 @@ int Stack::sendTxPacket(void *_packet, stack_mac_addr_t destination, uint16_t pr
 		vPortFree(_packet);
 		return -1;
 	}
+
+	// toggle IP activity LED
+	Board::sharedInstance()->toggleLED(Board::kBoardLEDIPAct);
 
 	// fill in the source and destination MAC fields
 	stack_802_3_header_t *ethHeader = (stack_802_3_header_t *) packet->txBuffer;
