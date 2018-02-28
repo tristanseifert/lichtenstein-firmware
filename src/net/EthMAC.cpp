@@ -915,6 +915,11 @@ int EthMAC::availableRxDescriptors(void) {
 void EthMAC::resetReceiveDescriptors(void) {
 	// mark all buffers as available
 	for(size_t i = 0; i < this->numRxDescriptors; i++) {
+		// count the frame as discarded
+		if(this->dmaReceivedFramesReady[i] == false) {
+			this->dmaReceivedFramesDiscarded++;
+		}
+
 		this->dmaReceivedFramesReady[i] = true;
 	}
 
@@ -1313,6 +1318,9 @@ void EthMAC::handleDMAErrorInterrupt(uint32_t dmasr) {
 		if(ok != pdPASS) {
 			this->discardLastRxPacket();
 //			LOG_ISR(S_ERROR, "Couldn't write network task message: queue full");
+		} else {
+			// we should have frames ready to receive so force DMA to poll
+			ETH->DMARPDR = ETH_DMARPDR_RPD;
 		}
 
 		// clear interrupt

@@ -70,7 +70,7 @@ class Filesystem {
 		void taskEntry(void);
 
 		static const size_t taskStackSize = 300;
-		static const int taskPriority = 1;
+		static const int taskPriority = 3;
 
 		TaskHandle_t task = nullptr;
 

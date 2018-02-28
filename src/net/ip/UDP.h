@@ -32,15 +32,21 @@ namespace ip {
 
 			// API for the IPv4 handler to call into
 			public:
-				void processUnicastFrame(void *);
-				void processMulticastFrame(void *);
-				void processBroadcastFrame(void *);
+				inline void processUnicastFrame(void *_rx) {
+					this->handleReceivedFrame(_rx, UNICAST);
+				}
+				inline void processMulticastFrame(void *_rx) {
+					this->handleReceivedFrame(_rx, MULTICAST);
+				}
+				inline void processBroadcastFrame(void *_rx) {
+					this->handleReceivedFrame(_rx, BROADCAST);
+				}
 
 			// private packet handling
 			private:
 				enum {UNICAST, MULTICAST, BROADCAST};
 
-				void hadleReceivedFrame(void *, int);
+				void handleReceivedFrame(void *, int);
 
 			// byte order conversion helpers
 			private:

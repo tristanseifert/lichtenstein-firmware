@@ -270,6 +270,7 @@ int Output::outputData(int channel, void *data, size_t length) {
 
 	// get the SPI peripheral
 	if(channel == 0) {
+		// XXX: fix this
 		spi = LED_OUT0_SPI;
 		return 0;
 	} else if(channel == 1) {

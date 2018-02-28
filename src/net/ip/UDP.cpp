@@ -50,40 +50,16 @@ UDP::~UDP() {
 
 
 /**
- * Forwards a received unicast frame to any applications listening on the port
- * the packet was received on.
- */
-void UDP::processUnicastFrame(void *_rx) {
-	stack_ipv4_rx_packet_t *rx = (stack_ipv4_rx_packet_t *) _rx;
-}
-
-/**
- * Forwards a received multicast packet to any applications listening on the
- * port the packet was received on, and are also members of the multicast
- * group this message was received on.
- */
-void UDP::processMulticastFrame(void *_rx) {
-	stack_ipv4_rx_packet_t *rx = (stack_ipv4_rx_packet_t *) _rx;
-
-}
-
-/**
- * Forwards a received broadcast packet to any applications that are listening
- * on the port the packet was received on, and have enabled reception of
- * broadcast frames.
- */
-void UDP::processBroadcastFrame(void *_rx) {
-	stack_ipv4_rx_packet_t *rx = (stack_ipv4_rx_packet_t *) _rx;
-
-}
-
-/**
  * Handles a received frame. This looks up whether any socket is listening on
  * the port, and if the packet was received with multicast/broadcast, checks
  * if the socket is set up to receive those.
  */
-void UDP::hadleReceivedFrame(void *_rx, int type) {
+void UDP::handleReceivedFrame(void *_rx, int type) {
 	stack_ipv4_rx_packet_t *rx = (stack_ipv4_rx_packet_t *) _rx;
+
+	// debugging
+	this->ipv4->releaseRxBuffer(rx);
+	return;
 
 	// byteswap the UDP header
 	udp_header_ipv4_t *header = (udp_header_ipv4_t *) rx->payload;

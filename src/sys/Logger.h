@@ -11,13 +11,18 @@
 #ifndef SYS_LOGGER_H_
 #define SYS_LOGGER_H_
 
-#include "FreeRTOS.h"
-#include "task.h"
-#include "queue.h"
+#include <LichtensteinApp.h>
 
 #include "LoggerGlobal.h"
 
-#include <stdarg.h>
+#include <cstddef>
+#include <cstdarg>
+
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wpadded"
+
+// declare linkeage of the ISR
+extern "C" void DMA1_Channel7_IRQHandler(void);
 
 class Logger {
 	public:
@@ -28,6 +33,19 @@ class Logger {
 		virtual ~Logger();
 
 	private:
+		void initUART(void);
+		void initUARTDMA(void);
+
+		void printMessage(char *, size_t, bool fromISR = false);
+
+	private:
+		friend void DMA1_Channel7_IRQHandler(void);
+
+		SemaphoreHandle_t uartDMALock = nullptr;
+
+	private:
+		// how many pending log messages can there be?
+		static const size_t logQueueLength = 16;
 		// priority of the logger task
 		static const int TaskPriority = 1;
 		// stack size for the logger task
@@ -36,7 +54,7 @@ class Logger {
 		bool printToTrace = true;
 
 		TaskHandle_t task = nullptr;
-		QueueHandle_t messageQueue;
+		QueueHandle_t messageQueue = nullptr;
 
 		friend void _LoggerTaskTrampoline(void *);
 
@@ -47,5 +65,7 @@ class Logger {
 
 		int log(bool fromISR, logger_severity_t severity, const char *module, const char *file, int line, const char *format, va_list ap);
 };
+
+#pragma GCC diagnostic pop
 
 #endif /* SYS_LOGGER_H_ */
