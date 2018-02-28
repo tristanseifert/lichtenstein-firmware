@@ -23,6 +23,7 @@
 namespace ip {
 	class Stack;
 	class ICMP;
+	class UDP;
 
 	class IPv4 {
 		public:
@@ -85,6 +86,7 @@ namespace ip {
 
 		private:
 			ICMP *icmp = nullptr;
+			UDP *udp = nullptr;
 
 		private:
 			Stack *stack = nullptr;

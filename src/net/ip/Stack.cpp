@@ -321,7 +321,19 @@ bool Stack::resolveIPToMAC(stack_ipv4_addr_t addr, stack_mac_addr_t *result, int
 	}
 	// is the address a multicast address?
 	else if(isIPv4Multicast(addr)) {
-		// TODO: convert multicast address
+		// get the low 23 bits of the address
+		uint32_t lowBits = __builtin_bswap32(addr) & 0x007FFFFF;
+
+		// copy multicast OUI
+		result->bytes[0] = 0x01;
+		result->bytes[1] = 0x00;
+		result->bytes[2] = 0x5E;
+
+		// now, copy the low 3 bytes of the IP
+		result->bytes[3] = (lowBits & 0x007F0000) >> 16;
+		result->bytes[4] = (lowBits & 0x0000FF00) >> 8;
+		result->bytes[5] = (lowBits & 0x000000FF);
+
 		return false;
 	}
 	// otherwise, perform an ARP lookup

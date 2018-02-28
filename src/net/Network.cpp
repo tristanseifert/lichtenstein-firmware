@@ -457,6 +457,9 @@ void Network::taskEntry(void) {
 					}
 
 					this->mac->dbgCheckDMAStatus();
+
+					// if reception stopped, reset all buffers
+					this->mac->resetReceiveDescriptors();
 					break;
 
 				// unknown interrupt

@@ -13,6 +13,7 @@
 #include "StackPrivate.h"
 
 #include "ICMP.h"
+#include "UDP.h"
 
 #include <LichtensteinApp.h>
 
@@ -38,6 +39,7 @@ IPv4::IPv4(Stack *_s) : stack(_s) {
 
 	// set up protocol handlers
 	this->icmp = new ICMP(_s, this);
+	this->udp = new UDP(_s, this);
 }
 
 /**
@@ -46,6 +48,7 @@ IPv4::IPv4(Stack *_s) : stack(_s) {
 IPv4::~IPv4() {
 	// deallocate protocol handlers
 	delete this->icmp;
+	delete this->udp;
 }
 
 
@@ -109,6 +112,11 @@ void IPv4::handleIPv4Frame(void *_packet) {
 				this->icmp->processUnicastFrame(rx);
 				break;
 
+			// handle unicasted UDP
+			case kIPv4ProtocolUDP:
+				this->udp->processUnicastFrame(rx);
+				break;
+
 			// unhandled protocol
 			default:
 				this->releaseRxBuffer(rx);
@@ -121,9 +129,18 @@ void IPv4::handleIPv4Frame(void *_packet) {
 		LOG(S_DEBUG, "Received broadcast from %s to %s, protocol 0x%02x", srcIp, destIp, rx->ipv4Header->protocol);
 #endif
 
-		// TODO: handle packet
+		// call into the appropriate protocol handler
+		switch(rx->ipv4Header->protocol) {
+			// handle broadcasted UDP
+			case kIPv4ProtocolUDP:
+				this->udp->processBroadcastFrame(rx);
+				break;
 
-		this->releaseRxBuffer(rx);
+			// unhandled protocol
+			default:
+				this->releaseRxBuffer(rx);
+				break;
+		}
 	}
 	// lastly, is it a multicast message?
 	else if(isIPv4Multicast(rx->ipv4Header->dest)) {
@@ -133,9 +150,18 @@ void IPv4::handleIPv4Frame(void *_packet) {
 			LOG(S_DEBUG, "Received multicast from %s to %s, protocol 0x%02x", srcIp, destIp, rx->ipv4Header->protocol);
 #endif
 
-			// TODO: handle packet
+			// call into the appropriate protocol handler
+			switch(rx->ipv4Header->protocol) {
+				// handle multicasted UDP
+				case kIPv4ProtocolUDP:
+					this->udp->processMulticastFrame(rx);
+					break;
 
-			this->releaseRxBuffer(rx);
+				// unhandled protocol
+				default:
+					this->releaseRxBuffer(rx);
+					break;
+			}
 		} else {
 			// ignore the frame
 			this->releaseRxBuffer(rx);

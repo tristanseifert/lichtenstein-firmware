@@ -908,6 +908,21 @@ int EthMAC::availableRxDescriptors(void) {
 }
 
 /**
+ * Resets all receive buffers to be available again. This would usually be
+ * called by a higher level interface if all receive buffers have been
+ * exhausted.
+ */
+void EthMAC::resetReceiveDescriptors(void) {
+	// mark all buffers as available
+	for(size_t i = 0; i < this->numRxDescriptors; i++) {
+		this->dmaReceivedFramesReady[i] = true;
+	}
+
+	// re-link descriptors
+	this->relinkRxDescriptors();
+}
+
+/**
  * Prints the DMA status.
  */
 void EthMAC::dbgCheckDMAStatus(void) {

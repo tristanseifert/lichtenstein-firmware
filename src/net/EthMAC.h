@@ -122,6 +122,8 @@ namespace net {
 
 			int availableRxDescriptors(void);
 
+			void resetReceiveDescriptors(void);
+
 			void dbgCheckDMAStatus(void);
 
 			// TODO: determine if the buffers could be smaller
