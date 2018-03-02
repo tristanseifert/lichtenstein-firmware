@@ -146,7 +146,7 @@ void OutputTask::taskEntry(void) noexcept {
 	xTimerStart(this->fpsTimer, portMAX_DELAY);
 
 	// enable output
-	o->setOutputEnable(true);
+//	o->setOutputEnable(true);
 
 	// keep pulling new RGBW buffers off the queue and process them
 	while(1) {

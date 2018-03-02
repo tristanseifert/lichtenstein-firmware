@@ -14,8 +14,15 @@
 
 #include "OutputTask.h"
 
+// declare ISR linkeage
+extern "C" void DMA1_Channel5_IRQHandler(void);
+extern "C" void DMA2_Channel2_IRQHandler(void);
+
 class Output {
 	friend class ledout::OutputTask;
+
+	friend void DMA1_Channel5_IRQHandler(void);
+	friend void DMA2_Channel2_IRQHandler(void);
 
 	public:
 		static void init(void);
@@ -34,10 +41,10 @@ class Output {
 
 	private:
 		static const int NumOutputChannels = 2;
-
-		// this is only public so the ISRs can access it
-	public:
+		// locks used to sync DMA
 		SemaphoreHandle_t dmaSemaphores[NumOutputChannels];
+		// number of writes to output channels
+		volatile unsigned int activeOutputs = 0;
 
 	private:
 		virtual ~Output();

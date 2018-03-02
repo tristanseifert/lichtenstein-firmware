@@ -289,6 +289,11 @@ int Output::outputData(int channel, void *data, size_t length) {
 	xSemaphoreTake(this->dmaSemaphores[channel], portMAX_DELAY);
 //	trace_printf("got lock!\n");
 
+	// enable output if needed
+	if(this->activeOutputs++ == 0) {
+		this->setOutputEnable(true);
+	}
+
 	// now that we have the semaphore, enter a critical section
 	taskENTER_CRITICAL();
 
@@ -372,6 +377,11 @@ extern "C" void LED_OUT0_DMA_ISR(void) {
 	DMA_ClearFlag(LED_OUT0_DMA_COMPLETE_FLAG);
 	SPI_I2S_DMACmd(LED_OUT0_SPI, SPI_I2S_DMAReq_Tx, DISABLE);
 
+	// disable output
+	if(--o->activeOutputs == 0) {
+		o->setOutputEnable(false);
+	}
+
 	// signal the end of the transfer
 	xSemaphoreGiveFromISR(o->dmaSemaphores[0], &woke);
 	portYIELD_FROM_ISR(woke);
@@ -388,6 +398,11 @@ extern "C" void LED_OUT1_DMA_ISR(void) {
 	// clear end-of-transfer flag and disable DMA request
 	DMA_ClearFlag(LED_OUT1_DMA_COMPLETE_FLAG);
 	SPI_I2S_DMACmd(LED_OUT1_SPI, SPI_I2S_DMAReq_Tx, DISABLE);
+
+	// disable output
+	if(--o->activeOutputs == 0) {
+		o->setOutputEnable(false);
+	}
 
 	// signal the end of the transfer
 	xSemaphoreGiveFromISR(o->dmaSemaphores[1], &woke);

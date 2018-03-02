@@ -21,6 +21,9 @@
 typedef void *udp_listen_t;
 #endif
 
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wpadded"
+
 namespace ip {
 	class Stack;
 	class IPv4;
@@ -73,5 +76,7 @@ namespace ip {
 	};
 
 } /* namespace ip */
+
+#pragma GCC diagnostic pop
 
 #endif /* NET_IP_UDP_H_ */

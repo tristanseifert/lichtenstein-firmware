@@ -10,6 +10,8 @@
 
 #include <cstdint>
 
+#include "Socket.h"
+
 /**
  * Packet header of an UDP packet.
  */
@@ -47,6 +49,9 @@ typedef struct {
 	uint8_t acceptsMulticast				:1;
 	// is this socket accepting broadcast?
 	uint8_t acceptsBroadcast				:1;
+
+	// address of the socket
+	ip::Socket *sock;
 } udp_listen_t;
 
 #pragma GCC diagnostic pop
