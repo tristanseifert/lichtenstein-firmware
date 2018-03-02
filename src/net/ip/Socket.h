@@ -19,7 +19,11 @@
 #pragma GCC diagnostic ignored "-Wpadded"
 
 namespace ip {
+	class UDPSocket;
+
 	class Socket {
+		friend class UDPSocket;
+
 		public:
 			/**
 			 * Socket options
