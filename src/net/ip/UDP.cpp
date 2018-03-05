@@ -26,7 +26,7 @@
 // set to 1 to log when packets are handled
 #define LOG_HANDLING						1
 // log transmitted packets
-#define LOG_TX_PACKETS					1
+#define LOG_TX_PACKETS					0
 
 
 

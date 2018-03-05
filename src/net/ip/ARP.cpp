@@ -361,7 +361,7 @@ void ARP::handleARPReply(void *_packet) {
 	}
 
 	// process the received frame later
-	this->sendReceivedPacketToTask(arp, 0);
+//	this->sendReceivedPacketToTask(arp, 0);
 }
 
 

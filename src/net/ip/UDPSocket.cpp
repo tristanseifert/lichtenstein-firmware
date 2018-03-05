@@ -24,7 +24,7 @@
 // log RX/TX map
 #define LOG_BUFFER_MAPS						0
 // log received frames
-#define LOG_RECEPTION						1
+#define LOG_RECEPTION						0
 
 
 

@@ -22,7 +22,7 @@
 
 
 // enable to log information when packets are received
-#define DEBUG_PACKET_RECEPTION				1
+#define DEBUG_PACKET_RECEPTION				0
 // enable to log information when packets are transmitted
 #define DEBUG_PACKET_TRANSMISSION			0
 

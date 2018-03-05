@@ -56,7 +56,7 @@ namespace ip {
 
 		private:
 			// size of the ICMP task's stack, in words
-			static const size_t TaskStackSize = 128;
+			static const size_t TaskStackSize = 150;
 			// priority of the ICMP task
 			static const int TaskPriority = 3;
 

@@ -181,6 +181,8 @@ namespace net {
 			void enableEthernetIRQ(void);
 			void disableEthernetIRQ(void);
 
+			BaseType_t receiveIRQ(void);
+
 			uint32_t indexOfLastReceivedISR(void);
 			void discardLastRxPacket(void);
 

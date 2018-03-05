@@ -79,7 +79,7 @@ namespace ip {
 
 		private:
 			// size of the ARP task's stack, in words
-			static const size_t TaskStackSize = 200;
+			static const size_t TaskStackSize = 150;
 			// priority of the ARP task
 			static const int TaskPriority = 2;
 

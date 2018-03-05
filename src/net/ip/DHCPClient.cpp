@@ -27,7 +27,7 @@
 // produce logs for the DHCP transaction
 #define LOG_DHCP_TRANSACTIONS				1
 // log info about any received DHCP offers
-#define LOG_OFFER							1
+#define LOG_OFFER							0
 
 
 

@@ -847,6 +847,8 @@ void EthMAC::setRxBuffers(void *buffers, size_t numBufs) {
 	ETH->DMARDLAR = (uint32_t) this->rxDescriptors;
 	this->rxLastReceived = (volatile mac_rx_dma_descriptor_t *) ETH->DMARDLAR;
 
+//	LOG(S_DEBUG, "RX last received: 0x%x (start 0x%x)", this->rxLastReceived, this->rxDescriptors);
+
 	// re-enable receive DMA and poll for buffers
 	ETH->DMAOMR |= ETH_DMAOMR_SR;
 	ETH->DMARPDR = ETH_DMARPDR_RPD;
@@ -891,12 +893,15 @@ void EthMAC::relinkRxDescriptors(void) {
 
 		// is this descriptor available?
 		if(this->dmaReceivedFramesReady[i]) {
-			start = (uint32_t) desc;
+			// set start if it wasn't already set
+			if(start == 0) {
+				start = (uint32_t) desc;
+			}
 
 			// increment the counter
 			freeDescriptors++;
 
-			// set the size value again
+			// set the size value again (clears buffer_requested bit)
 			desc->bufSz = ((EthMAC::rxBufSize) & 0x1FFF);
 
 			// set the OWN bit so the DMA engine owns the buffer
@@ -955,7 +960,10 @@ void EthMAC::relinkRxDescriptors(void) {
 
 		// set the address, start reception and re-read descriptors
 		ETH->DMARDLAR = start;
-		this->rxLastReceived = (volatile mac_rx_dma_descriptor_t *) ETH->DMARDLAR;
+		this->rxLastReceived = (volatile mac_rx_dma_descriptor_t *) start;
+
+//		LOG_ISR(S_DEBUG, "Free descriptors: %u", this->availableRxDescriptors());
+//		LOG_ISR(S_DEBUG, "Set RX last received: 0x%x", this->rxLastReceived);
 
 		ETH->DMAOMR |= ETH_DMAOMR_SR;
 
@@ -1275,51 +1283,23 @@ void EthMAC::handleMMCInterrupt(void) {
 void EthMAC::handleDMAInterrupt(uint32_t dmasr) {
 	BaseType_t ok = pdFALSE, woke = pdFALSE;
 
-	// set up a message, in case we need to pass it to the network stack
-	network_message_t msg;
-
 	// acknowledge all interrupts
 //	ETH->DMASR |= 0xFFFFFFFF;
 
 	// was this an early receive interrupt?
 	if(dmasr & ETH_DMASR_ERS) {
 		// copy address of descriptor
-//		volatile uint32_t addr = ETH->DMACHRDR;
-//		this->rxLastReceived = (volatile mac_rx_dma_descriptor_t *) addr;
+		volatile uint32_t addr = ETH->DMACHRDR;
+		this->rxLastReceived = (volatile mac_rx_dma_descriptor_t *) addr;
 
 		// acknowledge interrupt
 		ETH->DMASR = ETH_DMASR_ERS;
 	}
 	// was this a receive interrupt?
 	else if(dmasr & ETH_DMASR_RS) {
-		uint32_t index = this->indexOfLastReceivedISR();
-		uint32_t status = this->rxDescriptors[index].status;
-
-//		(volatile void) index;
-
-		// fill in the message and send it
-		msg.type = kNetworkMessageReceivedFrame;
-		msg.index = index;
-		msg.data = (uint8_t *) this->rxDescriptors[index].buf1Address;
-		msg.packetLength = (status & RX_STATUS_DMA_FRAME_LENGTH_MASK) >> RX_STATUS_DMA_FRAME_LENGTH_SHIFT;
-
-		// send the message
-		ok = xQueueSendToBackFromISR(this->net->messageQueue, &msg, &woke);
-
-		if(ok != pdPASS) {
-			this->discardLastRxPacket();
-//			LOG_ISR(S_ERROR, "Couldn't write network task message: queue full");
-		} else {
-			this->dmaReceivedFrames++;
-
-			// copy the address of the next descriptor for later
-/*			volatile uint32_t addr = ETH->DMACHRDR;
-			this->rxLastReceived = (volatile mac_rx_dma_descriptor_t *) addr;*/
-
-			// mark the frame as used
-			this->dmaReceivedFramesReady[index] = false;
-//			this->relinkRxDescriptors();
-		}
+		// handle the receive IRQ
+		woke = this->receiveIRQ();
+		ok = pdPASS;
 
 		// acknowledge interrupt
 		ETH->DMASR = ETH_DMASR_RS;
@@ -1454,6 +1434,64 @@ void EthMAC::handleDMAErrorInterrupt(uint32_t dmasr) {
 	if(ok == pdPASS) {
 		portYIELD_FROM_ISR(woke);
 	}
+}
+
+/**
+ * Handles a receive IRQ.
+ */
+BaseType_t EthMAC::receiveIRQ(void) {
+	BaseType_t ok, woke, wokeSticky = pdFALSE;
+	network_message_t msg;
+
+	/*
+	 * To determine which packets were received, iterate through the list of
+	 * RX descriptors. Those which are not owned by the DMA engine, but have
+	 * not got the "handled" bit set are forwarded to the app.
+	 */
+	for(size_t i = 0; i < this->numRxDescriptors; i++) {
+		uint32_t status = this->rxDescriptors[i].status;
+
+		// is the DMA owned bit clear?
+		if((status & RX_STATUS_DMA_OWNS_BUFFER) == 0) {
+			// is the processed bit clear?
+			if((this->rxDescriptors[i].bufSz & RX_BUFSZ_BUFFER_REQUESTED) == 0) {
+				// set the used flag
+				this->rxDescriptors[i].bufSz |= RX_BUFSZ_BUFFER_REQUESTED;
+
+				// fill message and send it
+				msg.type = kNetworkMessageReceivedFrame;
+				msg.index = i;
+				msg.data = (uint8_t *) this->rxDescriptors[i].buf1Address;
+				msg.packetLength = (status & RX_STATUS_DMA_FRAME_LENGTH_MASK) >> RX_STATUS_DMA_FRAME_LENGTH_SHIFT;
+
+				// send the message
+				ok = xQueueSendToBackFromISR(this->net->messageQueue, &msg, &woke);
+
+				// copy the woke flag to the sticky woke flag
+				if(woke == pdTRUE) {
+					wokeSticky = woke;
+				}
+
+				if(ok != pdPASS) {
+					// discard this packet
+					this->dmaReceivedFramesReady[i] = true;
+					this->relinkRxDescriptors();
+
+					// increment dropped frames counter
+					this->dmaReceivedFramesDiscarded++;
+				} else {
+					this->dmaReceivedFrames++;
+
+					// mark the frame as used
+					this->dmaReceivedFramesReady[i] = false;
+				}
+			}
+		}
+
+	}
+
+	// return the woke status
+	return wokeSticky;
 }
 
 /**

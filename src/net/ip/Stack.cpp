@@ -29,7 +29,7 @@
 // produce logging output for sending frames
 #define LOG_TRANSMIT								0
 // produce logging output for received frames
-#define LOG_RECEIVE								1
+#define LOG_RECEIVE								0
 
 
 
