@@ -111,10 +111,25 @@ typedef struct {
 	// message type
 	arp_task_message_type_t type;
 
-	// ARP packet
+	// payload data
 	union {
-		arp_ipv4_packet_t packet;
+		// used when an ARP message was received
+		struct {
+			// MAC address to learn
+			stack_mac_addr_t mac;
+			// IP to associate with the MAC
+			stack_ipv4_addr_t address;
+		} learn;
 
+		// used when generating a response
+		struct {
+			// MAC address to which the response is addressed
+			stack_mac_addr_t mac;
+			// IP address to which the response is addressed
+			stack_ipv4_addr_t address;
+		} sendResponse;
+
+		// used when resolving an IP not in the cache
 		struct {
 			// signal this semaphore upon response
 			SemaphoreHandle_t completion;

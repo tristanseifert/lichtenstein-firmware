@@ -58,7 +58,7 @@ namespace ip {
 		// ARP resolution notification list
 		private:
 			// maximum tasks that can be waiting on an IP resolution
-			static const size_t notificationsEntries = 8;
+			static const size_t notificationsEntries = 6;
 
 			// list of tasks waiting on an IP resolution
 			arp_resolve_notifications_t notifications[notificationsEntries];

@@ -17,13 +17,13 @@
 #include <cstring>
 
 // produce logging output for received ARP messages
-#define LOG_RECEIVED_ARP						1
+#define LOG_RECEIVED_ARP						0
 // produce logging output when we send an ARP request/reply
 #define LOG_SENT_ARP							1
 // log caching
 #define LOG_CACHING							1
 // produce logging output for when a task is notified
-#define LOG_RESOLVE_NOTIFICATIONS			1
+#define LOG_RESOLVE_NOTIFICATIONS			0
 
 namespace ip {
 
@@ -47,7 +47,7 @@ ARP::ARP(Stack *s) : stack(s) {
 	LOG(S_INFO, "ARP cache has %u entries", ARP::cacheEntries);
 
 	// clear notifications list
-	cacheLength = sizeof(this->notificationsEntries);
+	cacheLength = sizeof(this->notifications);
 	memset(this->notifications, 0, cacheLength);
 
 	LOG(S_INFO, "Notifications list has %u entries", ARP::notificationsEntries);
@@ -228,13 +228,15 @@ notify: ;
 				// logging
 #if LOG_RESOLVE_NOTIFICATIONS
 				Stack::ipToString(this->notifications[i].address, ipStr, 16);
-
 				LOG(S_DEBUG, "Notifying task waiting on %s: 0x%x", ipStr,
 						this->notifications[i].completion);
 #endif
 
 				// give semaphore and mark the entry as invalid
 				xSemaphoreGive(this->notifications[i].completion);
+
+
+				// clear this entry
 				this->notifications[i].valid = false;
 
 				this->notifications[i].completion = nullptr;
@@ -348,7 +350,7 @@ void ARP::handleARPRequest(void *_packet) {
 void ARP::handleARPReply(void *_packet) {
 	arp_ipv4_packet_t *arp = (arp_ipv4_packet_t *) _packet;
 
-	// ignore gratuitious ARP
+/*	// ignore gratuitious ARP
 	if(arp->senderMAC == arp->targetMAC) {
 #if LOG_RECEIVED_ARP
 		// debug logging
@@ -358,10 +360,17 @@ void ARP::handleARPReply(void *_packet) {
 #endif
 
 		return;
-	}
+	}*/
+
+#if LOG_RECEIVED_ARP
+	// debug logging
+	char ip[16];
+	Stack::ipToString(arp->senderIP, ip, 16);
+	LOG(S_DEBUG, "Received ARP Reply from address %s", ip);
+#endif
 
 	// process the received frame later
-//	this->sendReceivedPacketToTask(arp, 0);
+	this->sendReceivedPacketToTask(arp, 0);
 }
 
 
@@ -403,7 +412,12 @@ bool ARP::resolveIPv4(stack_ipv4_addr_t addr, stack_mac_addr_t *result, int time
 	}
 
 	// allocate a mutex to signal and build the message
-	SemaphoreHandle_t completion = xSemaphoreCreateMutex();
+	SemaphoreHandle_t completion = xSemaphoreCreateBinary();
+
+	if(completion == nullptr) {
+		LOG(S_ERROR, "Couldn't allocate completion semaphore");
+		return false;
+	}
 
 
 	arp_task_message_t msg;
@@ -418,7 +432,18 @@ bool ARP::resolveIPv4(stack_ipv4_addr_t addr, stack_mac_addr_t *result, int time
 	}
 
 	// wait on the mutex
+#if LOG_RESOLVE_NOTIFICATIONS
+	LOG(S_DEBUG, "Waiting on semaphore 0x%x", completion);
+#endif
+
 	if(xSemaphoreTake(completion, timeout) == pdTRUE) {
+#if LOG_RESOLVE_NOTIFICATIONS
+		char ipStr[16];
+		Stack::ipToString(addr, ipStr, 16);
+
+		LOG(S_DEBUG, "ARP request for %s complete", ipStr);
+#endif
+
 		// we can delete the semaphore now
 		vSemaphoreDelete(completion);
 
@@ -480,8 +505,8 @@ void ARP::taskEntry(void) {
 		switch(msg.type) {
 			// processes a received ARP message (a reply or gratuitous)
 			case kARPMessageReceived:
-				this->insertAddress(msg.payload.packet.senderMAC,
-						msg.payload.packet.senderIP);
+				this->insertAddress(msg.payload.learn.mac,
+						msg.payload.learn.address);
 				break;
 
 			// send a reply to a request for our MAC
@@ -519,13 +544,12 @@ void ARP::taskGenerateResponse(void *_msg) {
 	}
 
 	// populate the payload
-	arp_ipv4_packet_t *request = &msg->payload.packet;
 	arp_ipv4_packet_t *reply = (arp_ipv4_packet_t *) tx->payload;
 
 #if LOG_SENT_ARP
 	// debugging
 	char mac[18];
-	Stack::macToString(request->senderMAC, mac, 18);
+	Stack::macToString(msg->payload.sendResponse.mac, mac, 18);
 	LOG(S_DEBUG, "Sending ARP reply to %s", mac);
 #endif
 
@@ -538,8 +562,8 @@ void ARP::taskGenerateResponse(void *_msg) {
 	reply->op = ARP_OP_REPLY;
 
 	// target MAC/IP are that of the original requestor
-	reply->targetMAC = request->senderMAC;
-	reply->targetIP = request->senderIP;
+	reply->targetMAC = msg->payload.sendResponse.mac;
+	reply->targetIP = msg->payload.sendResponse.address;
 
 	// sender MAC/IP are OUR values
 	reply->senderMAC = this->stack->mac;
@@ -547,7 +571,7 @@ void ARP::taskGenerateResponse(void *_msg) {
 
 	// byteswap all multibyte fields and transmit
 	this->packetHostToNetwork(reply);
-	this->stack->sendTxPacket(tx, request->senderMAC, kProtocolARP);
+	this->stack->sendTxPacket(tx, msg->payload.sendResponse.mac, kProtocolARP);
 }
 
 /**
@@ -585,6 +609,9 @@ void ARP::taskResolveIP(void *_msg) {
 	if(!addedToNotifyQueue) {
 		LOG(S_ERROR, "Couldn't add to notify queue: insufficient space");
 
+		// notify caller
+		xSemaphoreGive(msg->payload.request.completion);
+
 		// discard the packet
 		this->stack->discardTXPacket(tx);
 		return;
@@ -592,7 +619,6 @@ void ARP::taskResolveIP(void *_msg) {
 
 
 	// populate the payload
-	arp_ipv4_packet_t *request = &msg->payload.packet;
 	arp_ipv4_packet_t *reply = (arp_ipv4_packet_t *) tx->payload;
 
 #if LOG_SENT_ARP
@@ -641,7 +667,6 @@ void ARP::taskSendGratuitous(void *_msg) {
 	}
 
 	// populate the payload
-	arp_ipv4_packet_t *request = &msg->payload.packet;
 	arp_ipv4_packet_t *reply = (arp_ipv4_packet_t *) tx->payload;
 
 #if LOG_SENT_ARP
@@ -682,7 +707,9 @@ void ARP::sendReceivedPacketToTask(void *_packet, int timeout) {
 	arp_task_message_t msg;
 
 	msg.type = kARPMessageReceived;
-	memcpy(&msg.payload.packet, packet, sizeof(arp_ipv4_packet_t));
+
+	msg.payload.learn.mac = packet->senderMAC;
+	msg.payload.learn.address = packet->senderIP;
 
 	// send the message
 	if(!this->postMessageToTask(&msg, timeout)) {
@@ -700,7 +727,9 @@ void ARP::sendResponseRequestToTask(void *_packet, int timeout) {
 	arp_task_message_t msg;
 
 	msg.type = kARPMessageSendReply;
-	memcpy(&msg.payload.packet, packet, sizeof(arp_ipv4_packet_t));
+
+	msg.payload.sendResponse.mac = packet->senderMAC;
+	msg.payload.sendResponse.address = packet->senderIP;
 
 	// send the message
 	if(!this->postMessageToTask(&msg, timeout)) {
