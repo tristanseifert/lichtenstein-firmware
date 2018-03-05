@@ -12,8 +12,11 @@
 
 #include <LichtensteinApp.h>
 
+#include "StackTypes.h"
+
 namespace ip {
 	class Stack;
+	class UDPSocket;
 
 	class DHCPClient {
 		public:
@@ -24,21 +27,35 @@ namespace ip {
 			void requestIP(void);
 			void reset(void);
 
+		// byte order conversion helpers
+		private:
+			void convertPacketByteOrder(void *);
+
+			void packetNetworkToHost(void *_packet) {
+				this->convertPacketByteOrder(_packet);
+			}
+			void packetHostToNetwork(void *_packet) {
+				this->convertPacketByteOrder(_packet);
+			}
+
 		private:
 			// DHCP task priority
 			static const int taskPriority = 1;
 			// task stack size
-			static const size_t taskStackSize = 100;
+			static const size_t taskStackSize = 200;
 
 			// timeout for receiving DHCP messages
 			static const TickType_t receiveTimeout = (5000 / portTICK_PERIOD_MS);
+
+			// UDP socket used by the task
+			UDPSocket *sock = nullptr;
 
 			// task
 			TaskHandle_t task = nullptr;
 			// timeout timer
 			TimerHandle_t timeoutTimer = nullptr;
 
-			// this handle is given every time the state changes
+			// this mutex is given every time the state changes
 			SemaphoreHandle_t stateChangeMutex = nullptr;
 
 			Stack *stack = nullptr;
@@ -56,6 +73,8 @@ namespace ip {
 				REQUEST,
 				// waiting for acknowledgement
 				WAITACK,
+				// set the IP configuration
+				SUCCESS,
 
 				// if any of the waits time out, go here
 				TIMEOUT
@@ -64,6 +83,37 @@ namespace ip {
 			// state of the DHCP state machine
 			unsigned int state = IDLE;
 
+			// transaction ID we sent with the discover
+			uint32_t currentXID = 0;
+
+			// last offer
+			struct {
+				// address the DHCP server offered us
+				stack_ipv4_addr_t address;
+				// subnet mask the DHCP server offered us
+				stack_ipv4_addr_t netmask;
+
+				// router address
+				stack_ipv4_addr_t router;
+				// DNS server address
+				stack_ipv4_addr_t dnsServer;
+				// log server address
+				stack_ipv4_addr_t syslogServer;
+				// TFTP server address
+				stack_ipv4_addr_t tftpServer;
+
+				// NTP server address
+				stack_ipv4_addr_t ntpServer;
+				// offset from UTC, in seconds
+				unsigned int utcOffset;
+
+				// how long the lease is good for, in seconds
+				unsigned int leaseExpiration;
+
+				// IP address of the DHCP server
+				stack_ipv4_addr_t serverAddress;
+			} offer;
+
 			// changes state and notifies task
 			inline void changeState(unsigned int newState) {
 				this->state = newState;
@@ -71,9 +121,20 @@ namespace ip {
 			}
 
 		private:
+			int parseOptions(void *);
+
+			void printOfferInfo(void);
+
+		private:
 			friend void _DHCPClientTaskTrampoline(void *);
 
 			int taskEntry(void);
+
+			void taskSendDiscover(void);
+			void taskHandleOffer(void);
+			void taskSendRequest(void);
+			void taskHandleAck(void);
+			void taskUpdateIPConfig(void);
 	};
 
 } /* namespace ip */

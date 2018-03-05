@@ -4,3 +4,6 @@
 [submodule "lib/spiffs"]
 	path = lib/spiffs
 	url = git@github.com:pellepl/spiffs.git
+[submodule "lib/pcg-cpp"]
+	path = lib/pcg-cpp
+	url = git@github.com:imneme/pcg-cpp.git

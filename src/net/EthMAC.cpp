@@ -124,6 +124,14 @@ void EthMAC::linkStateChanged(bool linkUp, bool duplex, net_link_speed_t speed) 
 
 	// enable reception and transmission
 	if(linkUp) {
+		// mark all descriptors as available
+		for(size_t i = 0; i < this->numRxDescriptors; i++) {
+			this->dmaReceivedFramesReady[i] = true;
+		}
+
+		this->relinkRxDescriptors();
+
+		// set the config
 		cfg |= ETH_MACCR_TE; // enable transmitter
 		cfg |= ETH_MACCR_RE; // enable receiver
 
@@ -836,8 +844,8 @@ void EthMAC::setRxBuffers(void *buffers, size_t numBufs) {
 //	ETH->DMAOMR &= ~(ETH_DMAOMR_SR);
 
 	// set the address of the receive descriptors
-	this->rxLastReceived = this->rxDescriptors;
 	ETH->DMARDLAR = (uint32_t) this->rxDescriptors;
+	this->rxLastReceived = (volatile mac_rx_dma_descriptor_t *) ETH->DMARDLAR;
 
 	// re-enable receive DMA and poll for buffers
 	ETH->DMAOMR |= ETH_DMAOMR_SR;
@@ -887,6 +895,9 @@ void EthMAC::relinkRxDescriptors(void) {
 
 			// increment the counter
 			freeDescriptors++;
+
+			// set the size value again
+			desc->bufSz = ((EthMAC::rxBufSize) & 0x1FFF);
 
 			// set the OWN bit so the DMA engine owns the buffer
 			desc->status = 0;
@@ -938,14 +949,14 @@ void EthMAC::relinkRxDescriptors(void) {
 		// stop reception
 		ETH->DMAOMR &= ~(ETH_DMAOMR_SR);
 	} else {
-		this->rxLastReceived = (volatile mac_rx_dma_descriptor_t *) start;
-
 		// disable reception to write to the DMA descriptor address
 		// TODO: mask IRQs here for the "DMA receive stopped"
 //		ETH->DMAOMR &= ~(ETH_DMAOMR_SR);
 
 		// set the address, start reception and re-read descriptors
 		ETH->DMARDLAR = start;
+		this->rxLastReceived = (volatile mac_rx_dma_descriptor_t *) ETH->DMARDLAR;
+
 		ETH->DMAOMR |= ETH_DMAOMR_SR;
 
 		ETH->DMARPDR = ETH_DMARPDR_RPD;
@@ -1273,8 +1284,8 @@ void EthMAC::handleDMAInterrupt(uint32_t dmasr) {
 	// was this an early receive interrupt?
 	if(dmasr & ETH_DMASR_ERS) {
 		// copy address of descriptor
-		volatile uint32_t addr = ETH->DMACHRDR;
-		this->rxLastReceived = (volatile mac_rx_dma_descriptor_t *) addr;
+//		volatile uint32_t addr = ETH->DMACHRDR;
+//		this->rxLastReceived = (volatile mac_rx_dma_descriptor_t *) addr;
 
 		// acknowledge interrupt
 		ETH->DMASR = ETH_DMASR_ERS;
@@ -1302,12 +1313,12 @@ void EthMAC::handleDMAInterrupt(uint32_t dmasr) {
 			this->dmaReceivedFrames++;
 
 			// copy the address of the next descriptor for later
-			volatile uint32_t addr = ETH->DMACHRDR;
-			this->rxLastReceived = (volatile mac_rx_dma_descriptor_t *) addr;
+/*			volatile uint32_t addr = ETH->DMACHRDR;
+			this->rxLastReceived = (volatile mac_rx_dma_descriptor_t *) addr;*/
 
 			// mark the frame as used
 			this->dmaReceivedFramesReady[index] = false;
-			this->relinkRxDescriptors();
+//			this->relinkRxDescriptors();
 		}
 
 		// acknowledge interrupt

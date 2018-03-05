@@ -22,7 +22,7 @@
 
 
 // enable to log information when packets are received
-#define DEBUG_PACKET_RECEPTION				0
+#define DEBUG_PACKET_RECEPTION				1
 // enable to log information when packets are transmitted
 #define DEBUG_PACKET_TRANSMISSION			0
 
@@ -75,7 +75,7 @@ void IPv4::handleIPv4Frame(void *_packet) {
 	stack_ipv4_rx_packet_t *rx;
 	rx = (stack_ipv4_rx_packet_t *) pvPortMalloc(sizeof(stack_ipv4_rx_packet_t));
 
-	if(!rx) {
+	if(rx == nullptr) {
 		// if we couldn't allocate an RX struct, return the packet to the stack
 		LOG(S_ERROR, "Couldn't allocate RX buffer");
 
@@ -98,9 +98,9 @@ void IPv4::handleIPv4Frame(void *_packet) {
 	Stack::ipToString(rx->ipv4Header->dest, destIp, 16);
 #endif
 
-
-	// check if the destination IP matches our IP
-	if(rx->ipv4Header->dest == this->stack->getIPAddress()) {
+	// check if the destination IP matches our IP, if the IP is valid
+	if(this->stack->isIPv4ConfigValid &&
+			rx->ipv4Header->dest == this->stack->getIPAddress()) {
 #if DEBUG_PACKET_RECEPTION
 		LOG(S_DEBUG, "Received unicast from %s to %s, protocol 0x%02x", srcIp, destIp, rx->ipv4Header->protocol);
 #endif

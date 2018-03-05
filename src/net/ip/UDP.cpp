@@ -25,6 +25,8 @@
 
 // set to 1 to log when packets are handled
 #define LOG_HANDLING						1
+// log transmitted packets
+#define LOG_TX_PACKETS					1
 
 
 
@@ -105,11 +107,16 @@ void UDP::handleReceivedFrame(void *_rx, int type) {
 
 				goto handled;
 			}
-			// if we get down here, the packet is unhandled
+			// we should never get down here
 			else {
+				LOG(S_ERROR, "Invalid type %u for 0x%x", type, listen);
+
 				goto discard;
 			}
 		}
+
+		// only get here if no socket to handle this packet was found
+		goto discard;
 	}
 
 discard: ;
@@ -323,6 +330,13 @@ int UDP::sendTxBuffer(UDPSocket *sock, stack_ipv4_addr_t address, unsigned int p
 	udpHeader->sourcePort = (uint16_t) sock->localPort;
 
 	this->packetHostToNetwork(udpHeader);
+
+	// logging
+#if LOG_TX_PACKETS
+	char ipStr[16];
+	Stack::ipToString(address, ipStr, 16);
+	LOG(S_DEBUG, "Sending UDP packet to %s:%u", ipStr, port);
+#endif
 
 	// transmit the buffer
 	if(this->ipv4->transmitIPv4TxBuffer(buffer->ipTx) == false) {

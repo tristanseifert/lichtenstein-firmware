@@ -506,6 +506,8 @@ void Network::taskEntry(void) {
  * Handles a received frame by forwarding it to the FreeRTOS TCP/IP stack.
  */
 void Network::handleReceivedFrame(network_message_t *msg) {
+	LOG(S_DEBUG, "Received packet (index %u, %u bytes)", msg->index, msg->packetLength);
+
 	// forward packet to the network stack
 	this->stack->receivedPacket(msg->data, msg->packetLength, msg->index);
 }

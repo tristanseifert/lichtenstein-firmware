@@ -329,8 +329,9 @@ void ARP::handleARPRequest(void *_packet) {
 	LOG(S_DEBUG, "Who has %s?", ip);
 #endif
 
-	// is this a request for our MAC address?
-	if(arp->targetIP == this->stack->getIPAddress()) {
+	// is this a request for our MAC address, and our IP config is valid?
+	if(this->stack->isIPv4ConfigValid &&
+			arp->targetIP == this->stack->getIPAddress()) {
 		// learn the MAC/IP of the node requesting our IP
 		this->sendReceivedPacketToTask(arp, 0);
 

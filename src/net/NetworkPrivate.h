@@ -24,7 +24,7 @@ typedef enum {
 	 *
 	 * @note The frame must be released when the stack no longer needs it.
 	 */
-	kNetworkMessageReceivedFrame,
+	kNetworkMessageReceivedFrame			= 1000,
 
 	/**
 	 * A previously queued frame has been transmitted. The DMA buffer should

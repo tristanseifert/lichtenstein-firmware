@@ -28,6 +28,8 @@
 #define LOG_ADDRESS_TO_MAC						0
 // produce logging output for sending frames
 #define LOG_TRANSMIT								0
+// produce logging output for received frames
+#define LOG_RECEIVE								1
 
 
 
@@ -47,18 +49,9 @@ Stack::Stack(Network *n) : net(n) {
 
 	// XXX: testing
 //	this->ip = __builtin_bswap32(0xac100d96);
-	this->ip = __builtin_bswap32(0xc0a800c8);
-	this->netMask = __builtin_bswap32(0xFFFFFF00);
+//	this->ip = __builtin_bswap32(0xc0a800c8); // 192.168.0.200
+//	this->netMask = __builtin_bswap32(0xFFFFFF00);
 //	this->routerIp = __builtin_bswap32(0xac100d01);
-
-	char ip[16];
-	Stack::ipToString(this->ip, ip, 16);
-	char mask[16];
-	Stack::ipToString(this->netMask, mask, 16);
-	char router[16];
-	Stack::ipToString(this->routerIp, router, 16);
-
-	LOG(S_DEBUG, "IP configuration: %s, netmask %s, router %s", ip, mask, router);
 }
 
 /**
@@ -70,7 +63,9 @@ Stack::~Stack() {
 	delete this->ipv4;
 
 	// delete DHCP client
-	delete this->dhcp;
+	if(this->dhcp) {
+		delete this->dhcp;
+	}
 }
 
 
@@ -139,6 +134,14 @@ void Stack::ipConfigBecameValid(void) {
 
 	// send a gratuitous ARP
 	this->arp->sendGratuitousARP();
+
+	// print info
+	char ipStr[16], mask[16], router[16];
+	Stack::ipToString(this->ip, ipStr, 16);
+	Stack::ipToString(this->netMask, mask, 16);
+	Stack::ipToString(this->routerIp, router, 16);
+
+	LOG(S_INFO, "IP configuration: %s, netmask %s, router %s", ipStr, mask, router);
 }
 
 
@@ -158,6 +161,15 @@ UDPSocket *Stack::createUDPSocket(void) {
 void Stack::receivedPacket(void *data, size_t length, uint32_t userData) {
 	// if the link isn't up, ignore the packet
 	if(!this->linkUp) {
+		this->net->releaseRxPacket(userData);
+		return;
+	}
+
+	// handle zero-length packets
+	if(length == 0) {
+		stack_802_3_header_t *header = (stack_802_3_header_t *) data;
+		LOG(S_INFO, "Received zero-length packet; type 0x%x", header->etherType);
+
 		this->net->releaseRxPacket(userData);
 		return;
 	}
@@ -195,6 +207,8 @@ void Stack::receivedPacket(void *data, size_t length, uint32_t userData) {
 
 	// if the packet has length in place of EtherType, discard it
 	if(header->etherType < 1536) {
+		LOG(S_ERROR, "Got Ethernet I packet, ignoring");
+
 		this->doneWithRxPacket(packet);
 		return;
 	}
@@ -211,6 +225,13 @@ void Stack::receivedPacket(void *data, size_t length, uint32_t userData) {
 		packet->unicast = true;
 	}
 
+	// logging
+#if LOG_RECEIVE
+	char macStr[18];
+	Stack::macToString(packet->ethHeader->macSrc, macStr, 18);
+	LOG(S_DEBUG, "Received packet from %s", macStr);
+#endif
+
 
 	// run the appropriate handler for the L2 protocol
 	switch(packet->l2Proto) {
@@ -221,14 +242,7 @@ void Stack::receivedPacket(void *data, size_t length, uint32_t userData) {
 
 		// call into IPv4 handler
 		case kProtocolIPv4:
-			// handle the frame only if the IP config is valid
-			if(this->isIPv4ConfigValid) {
-				this->ipv4->handleIPv4Frame(packet);
-			}
-			// discard it otherwise
-			else {
-				this->doneWithRxPacket(packet);
-			}
+			this->ipv4->handleIPv4Frame(packet);
 			break;
 
 		// IPv6 is currently unimplemented

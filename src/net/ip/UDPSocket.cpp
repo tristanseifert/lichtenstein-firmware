@@ -19,6 +19,15 @@
 
 #include <LichtensteinApp.h>
 
+
+
+// log RX/TX map
+#define LOG_BUFFER_MAPS						0
+// log received frames
+#define LOG_RECEPTION						1
+
+
+
 namespace ip {
 
 /**
@@ -68,6 +77,11 @@ bool UDPSocket::receivedFrame(void *_rx, int type) {
 
 	msg.type = kMessageTypeReceivedPacket;
 	msg.buffer.rx = rx;
+
+#if LOG_RECEPTION
+	udp_header_ipv4_t *header = (udp_header_ipv4_t *) rx->payload;
+	LOG(S_DEBUG, "Received packet for socket 0x%x at port %u", this, header->destPort);
+#endif
 
 	// userdata is the type of reception
 	msg.userData = type;
@@ -123,7 +137,7 @@ int UDPSocket::receive(void **buffer, size_t *bytesRead, unsigned int timeout) {
 	}
 
 	// return the address of the actual data in the packet
-	*buffer = (uint8_t *) msg.buffer.rx->payload + sizeof(udp_header_ipv4_t);
+	*buffer = ((uint8_t *) msg.buffer.rx->payload) + sizeof(udp_header_ipv4_t);
 
 	udp_header_ipv4_t *header = (udp_header_ipv4_t *) msg.buffer.rx->payload;
 	*bytesRead = header->length - sizeof(udp_header_ipv4_t);
@@ -134,6 +148,10 @@ int UDPSocket::receive(void **buffer, size_t *bytesRead, unsigned int timeout) {
 		if(this->rxBufferMap[i].buffer == nullptr) {
 			this->rxBufferMap[i].buffer = *buffer;
 			this->rxBufferMap[i].rxBuffer = msg.buffer.rx;
+
+#if LOG_BUFFER_MAPS
+			LOG(S_DEBUG, "RX Buffer 0x%x -> rx 0x%x, index %u", *buffer, msg.buffer.rx, i);
+#endif
 
 			return Socket::ErrSuccess;
 		}
@@ -156,6 +174,10 @@ int UDPSocket::discardRx(void *buffer) {
 		if(this->rxBufferMap[i].buffer == buffer) {
 			// if so, release it and clear the struct
 			this->udp->ipv4->releaseRxBuffer(this->rxBufferMap[i].rxBuffer);
+
+#if LOG_BUFFER_MAPS
+			LOG(S_DEBUG, "Clear RX buffer %u", i);
+#endif
 
 			this->rxBufferMap[i].buffer = nullptr;
 			this->rxBufferMap[i].rxBuffer = nullptr;
@@ -193,8 +215,12 @@ int UDPSocket::prepareTx(void **buffer, size_t length, unsigned int timeout) {
 	for(size_t i = 0; i < UDPSocket::txMapSize; i++) {
 		// is the buffer null?
 		if(this->txBufferMap[i].buffer == nullptr) {
-			this->txBufferMap[i].buffer = *buffer;
+			this->txBufferMap[i].buffer = packet->payload;
 			this->txBufferMap[i].txPacket = packet;
+
+#if LOG_BUFFER_MAPS
+			LOG(S_DEBUG, "TX Buffer 0x%x -> txPacket 0x%x, index %u", packet->payload, packet, i);
+#endif
 
 			goto success;
 		}
@@ -246,14 +272,25 @@ int UDPSocket::sendTo(void *buffer, stack_ipv4_addr_t addr, uint16_t port, unsig
 	for(size_t i = 0; i < UDPSocket::txMapSize; i++) {
 		// is the buffer address equal?
 		if(this->txBufferMap[i].buffer == buffer) {
-			// if so, transmit it
 			tx = (udp_tx_packet_t *) this->txBufferMap[i].txPacket;
 
+
+			/*// write the port number into the UDP header and set destination
+			this->udp->ipv4->setIPv4Destination(tx->ipTx, addr);
+
+			udp_header_ipv4_t *udpHeader = (udp_header_ipv4_t *) tx->ipTx->payload;
+			udpHeader->destPort = port;*/
+
+			// then, transmit it
 			err = this->udp->sendTxBuffer(this, addr, port, tx);
 
 			// then empty the fields
 			this->txBufferMap[i].buffer = nullptr;
 			this->txBufferMap[i].txPacket = nullptr;
+
+#if LOG_BUFFER_MAPS
+			LOG(S_DEBUG, "Clear TX buffer %u", i);
+#endif
 
 			// return error state of the transmit call
 			return err;
