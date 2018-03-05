@@ -246,6 +246,12 @@ void Network::setUpEthernetGPIOs(void) {
 void Network::scanForPHYs(void) {
 	uint32_t id;
 
+	// wait ~200ms
+	volatile int timeout = 2200000;
+	do {
+
+	} while(timeout--);
+
 	// scan all PHYs sequentially
 	for(uint16_t phyAddr = 0; phyAddr <= 0x1f; phyAddr++) {
 		// read its id
@@ -263,9 +269,22 @@ void Network::scanForPHYs(void) {
 
 			if(this->phy == nullptr) {
 				LOG(S_FATAL, "Couldn't create PHY with PHYID %08x", id);
+				goto failure;
+			} else {
+				goto success;
 			}
 		}
 	}
+
+failure: ;
+	// no PHYs found
+	LOG(S_ERROR, "Couldn't find any PHYs, resetting");
+
+	NVIC_SystemReset();
+	return;
+
+	// we found a PHY
+success: ;
 }
 
 /**
@@ -653,16 +672,14 @@ int Network::releaseRxPacket(uint32_t userData) {
  * @return 0 if the MAC was registered, error code otherwise.
  */
 int Network::registerMulticastMAC(uint8_t *address) {
-	// TODO: implement
-	return -1;
+	return this->mac->setMulticastAddr(address, true);
 }
 
 /**
  * Removes the registration for a previous multicast MAC address.
  */
 int Network::unregisterMulticastMAC(uint8_t *address) {
-	// TODO: implement
-	return -1;
+	return this->mac->setMulticastAddr(address, false);
 }
 
 

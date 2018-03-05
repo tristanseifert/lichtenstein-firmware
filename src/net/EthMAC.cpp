@@ -175,7 +175,8 @@ void EthMAC::setUpMACRegisters(void) {
 //	frameFilter |= ETH_MACFFR_RA; // Pass all (XXX: for debugging)
 
 	frameFilter |= ETH_MACFFR_HPF; // enable hash/perfect filtering
-	frameFilter |= ETH_MACFFR_PAM; // pass all multicast packets
+//	frameFilter |= ETH_MACFFR_PAM; // pass all multicast packets
+	frameFilter |= ETH_MACFFR_HM; // use hash filtering for multicast
 
 	ETH->MACFFR = frameFilter;
 
@@ -576,6 +577,38 @@ void EthMAC::setMACAddr(int slot, uint8_t *address, bool enable) {
 }
 
 /**
+ * Sets the state of the appropriate bit in the multicast hasah table.
+ */
+int EthMAC::setMulticastAddr(uint8_t *address, bool enable) {
+    unsigned int k;
+    uint32_t crc;
+    uint32_t hashTable[2];
+
+    // get current state of the hash table
+    hashTable[0] = ETH->MACHTLR;
+    hashTable[1] = ETH->MACHTHR;
+
+    // set or clear the bit
+	crc = this->calcCRC(address, 6);
+
+	k = (crc >> 26) & 0x3F;
+
+	if(enable) {
+		hashTable[k / 32] |= (1 << (k % 32));
+	} else {
+		hashTable[k / 32] &= ~(1 << (k % 32));
+	}
+
+    // write the hash table back
+    ETH->MACHTLR = hashTable[0];
+    ETH->MACHTHR = hashTable[1];
+
+    LOG(S_DEBUG, "MACHTLR = %08x, MACHTHR = %08x", ETH->MACHTLR, ETH->MACHTHR);
+
+    return 0;
+}
+
+/**
  * Changes the state of promiscuous mode. When enabled, all frames are passed
  * to the application, whether they pass the MAC filter or not.
  *
@@ -593,6 +626,34 @@ void EthMAC::setPromiscuousMode(bool enable) {
 	ETH->MACFFR = frameFilter;
 }
 
+
+
+/**
+ * Calculates the Ethernet CRC over the given buffer.
+ */
+uint32_t EthMAC::calcCRC(void *data, size_t length) {
+	unsigned int i, j;
+
+	// starting values for CRC
+	const uint8_t *p = (uint8_t *) data;
+	uint32_t crc = 0xFFFFFFFF;
+
+	// loop through data
+	for(i = 0; i < length; i++) {
+		// the message is processed bit by bit
+		for(j = 0; j < 8; j++) {
+			// update CRC value
+			if(((crc >> 31) ^ (p[i] >> j)) & 0x01) {
+				crc = (crc << 1) ^ 0x04C11DB7;
+			} else {
+				crc = crc << 1;
+			}
+		}
+	}
+
+	// return CRC value
+	return ~crc;
+}
 
 
 /**

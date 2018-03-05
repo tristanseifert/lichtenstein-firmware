@@ -43,8 +43,6 @@ void _ICMPTaskTrampoline(void *ctx) {
 ICMP::ICMP(Stack *_stack, IPv4 *_ipv4) : stack(_stack), ipv4(_ipv4) {
 	BaseType_t ok;
 
-	LOG(S_DEBUG, "ICMP packet size: %u", sizeof(icmp_packet_ipv4_t));
-
 	// create the queue
 	this->messageQueue = xQueueCreate(ICMP::messageQueueSize, sizeof(icmp_task_message_t));
 

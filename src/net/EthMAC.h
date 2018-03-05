@@ -45,7 +45,13 @@ namespace net {
 			}
 			void setMACAddr(int slot, uint8_t *address, bool enable);
 
+			int setMulticastAddr(uint8_t *address, bool enable);
+
 			void setPromiscuousMode(bool enable);
+
+		// CRC
+		private:
+			uint32_t calcCRC(void *data, size_t length);
 
 		// management counters
 		public:
