@@ -25,6 +25,9 @@ class Network;
 namespace ip {
 	class ARP;
 	class IPv4;
+	class DHCPClient;
+
+	class UDPSocket;
 
 	class Stack {
 		public:
@@ -39,6 +42,10 @@ namespace ip {
 
 			stack_ipv4_addr_t getIPAddress(void) const;
 
+		// sockets
+		public:
+			UDPSocket *createUDPSocket(void);
+
 		// API for receiving/transmitting packets
 		public:
 			void receivedPacket(void *data, size_t length, uint32_t userData);
@@ -50,7 +57,7 @@ namespace ip {
 			void doneWithRxPacket(void *);
 
 
-			void *getTxPacket(size_t);
+			void *getTxPacket(size_t, int timeout = -1);
 
 			void discardTXPacket(void *);
 			int sendTxPacket(void *, stack_mac_addr_t, uint16_t);
@@ -92,6 +99,19 @@ namespace ip {
 
 			// ethernet header and CRC
 			static const size_t maxPayloadLength = net::EthMAC::MTU - 18 - 4;
+
+		private:
+			friend class DHCPClient;
+
+			// only when set are IP packets handled
+			bool isIPv4ConfigValid = false;
+
+			// set to use DHCP to configure the network
+			bool useDHCP = true;
+			DHCPClient *dhcp = nullptr;
+
+		private:
+			void ipConfigBecameValid(void);
 	};
 } /* namespace ip */
 

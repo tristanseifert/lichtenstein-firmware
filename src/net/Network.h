@@ -26,6 +26,7 @@ namespace net {
 
 namespace ip {
 	class Stack;
+	class UDPSocket;
 }
 
 class Network {
@@ -52,6 +53,10 @@ class Network {
 		void scanForPHYs(void);
 
 		void setUpStack();
+
+	// global helpers
+	public:
+		static ip::UDPSocket *getUDPSocket(void) noexcept;
 
 	// network message task
 	private:
@@ -113,7 +118,7 @@ class Network {
 
 	// API for network stack
 	public:
-		void *getTxBuffer(size_t size);
+		void *getTxBuffer(size_t, int);
 		void queueTxBuffer(void *);
 		void releaseTxBuffer(void *);
 

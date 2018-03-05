@@ -10,7 +10,10 @@
 #include "StackPrivate.h"
 
 #include "ARP.h"
+
 #include "IPv4.h"
+#include "UDP.h"
+#include "DHCPClient.h"
 
 #include "../Network.h"
 
@@ -39,6 +42,9 @@ Stack::Stack(Network *n) : net(n) {
 	this->arp = new ARP(this);
 	this->ipv4 = new IPv4(this);
 
+	// create DHCP client
+	this->dhcp = new DHCPClient(this);
+
 	// XXX: testing
 //	this->ip = __builtin_bswap32(0xac100d96);
 	this->ip = __builtin_bswap32(0xc0a800c8);
@@ -62,6 +68,9 @@ Stack::~Stack() {
 	// delete protocol handlers
 	delete this->arp;
 	delete this->ipv4;
+
+	// delete DHCP client
+	delete this->dhcp;
 }
 
 
@@ -86,11 +95,25 @@ void Stack::linkStateChanged(bool _linkUp) {
 
 	// did the link come up?
 	if(linkUp) {
-		// send a gratuitous ARP
-		this->arp->sendGratuitousARP();
+		// if using DHCP, start request
+		if(this->useDHCP) {
+			this->dhcp->requestIP();
+		}
+		// otherwise we have a static IP
+		else {
+			this->ipConfigBecameValid();
+		}
 	}
 	// otherwise, we lost the link :(
 	else {
+		// reset DHCP state machine
+		if(this->useDHCP) {
+			this->dhcp->reset();
+		}
+
+		// invalidate IP configuration
+		this->isIPv4ConfigValid = false;
+
 		// clear ARP cache
 		this->arp->clearARPCache();
 	}
@@ -102,6 +125,29 @@ void Stack::linkStateChanged(bool _linkUp) {
  */
 stack_ipv4_addr_t Stack::getIPAddress(void) const {
 	return this->ip;
+}
+
+
+
+/**
+ * Called after the IPv4 configuration becomes valid. This is usually called
+ * once we've received a DHCP lease, or on link up if the IP is static.
+ */
+void Stack::ipConfigBecameValid(void) {
+	// mark the IP config as valid
+	this->isIPv4ConfigValid = true;
+
+	// send a gratuitous ARP
+	this->arp->sendGratuitousARP();
+}
+
+
+
+/**
+ * Allocates an UDP socket.
+ */
+UDPSocket *Stack::createUDPSocket(void) {
+	return this->ipv4->udp->createSocket();
 }
 
 
@@ -175,7 +221,14 @@ void Stack::receivedPacket(void *data, size_t length, uint32_t userData) {
 
 		// call into IPv4 handler
 		case kProtocolIPv4:
-			this->ipv4->handleIPv4Frame(packet);
+			// handle the frame only if the IP config is valid
+			if(this->isIPv4ConfigValid) {
+				this->ipv4->handleIPv4Frame(packet);
+			}
+			// discard it otherwise
+			else {
+				this->doneWithRxPacket(packet);
+			}
 			break;
 
 		// IPv6 is currently unimplemented
@@ -217,11 +270,16 @@ void Stack::doneWithRxPacket(void *_inPacket) {
  * @note This is a blocking call, so it shouldn't be called from within the
  * receive pipeline.
  */
-void *Stack::getTxPacket(size_t length) {
+void *Stack::getTxPacket(size_t length, int timeout) {
 	// verify the length isn't too big
 	if(length > Stack::maxPayloadLength) {
 		LOG(S_ERROR, "Maximum payload length exceeded for %u bytes", length);
 		return nullptr;
+	}
+
+	// handle negative timeouts
+	if(timeout < 0) {
+		timeout = portMAX_DELAY;
 	}
 
 	// calculate total length to send on the wire
@@ -229,7 +287,7 @@ void *Stack::getTxPacket(size_t length) {
 	totalLength += sizeof(stack_802_3_header_t);
 //	totalLength += 4; // CRC at the end (inserted by MAC)
 
-	void *txBuffer = this->net->getTxBuffer(totalLength);
+	void *txBuffer = this->net->getTxBuffer(totalLength, timeout);
 
 	if(txBuffer == nullptr) {
 		return nullptr;

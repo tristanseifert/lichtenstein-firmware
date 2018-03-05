@@ -18,7 +18,8 @@
 
 // forward declare the type of the listening struct
 #ifndef UDP_PRIVATE
-typedef void *udp_listen_t;
+typedef void udp_listen_t;
+typedef void udp_tx_packet_t;
 #endif
 
 #pragma GCC diagnostic push
@@ -27,11 +28,23 @@ typedef void *udp_listen_t;
 namespace ip {
 	class Stack;
 	class IPv4;
+	class UDPSocket;
 
 	class UDP {
+		friend class UDPSocket;
+
 		public:
 			UDP(Stack *, IPv4 *);
 			virtual ~UDP();
+
+			public:
+				enum {
+					ErrSuccess				= 0,
+
+					ErrNoBookkeepingSpace	= -3000,
+					ErrPortInUse				= -3001,
+					ErrTxFailure				= -3002,
+				};
 
 			// API for the IPv4 handler to call into
 			public:
@@ -61,6 +74,33 @@ namespace ip {
 				void packetHostToNetwork(void *_packet) {
 					this->convertPacketByteOrder(_packet);
 				}
+
+			// public socket API
+			public:
+				UDPSocket *createSocket(void);
+
+			// socket API
+			protected:
+				int bindSocketForPort(UDPSocket *sock, uint16_t port);
+				void unbindSocket(UDPSocket *sock);
+
+				int setMulticastReceptionState(UDPSocket *sock, bool enabled);
+				int setBroadcastReceptionState(UDPSocket *sock, bool enabled);
+
+				udp_tx_packet_t *getTxBuffer(UDPSocket *sock, size_t payloadLength, int timeout);
+				int discardTxBuffer(UDPSocket *sock, udp_tx_packet_t *buffer);
+				int sendTxBuffer(UDPSocket *sock, stack_ipv4_addr_t address, unsigned int port, udp_tx_packet_t *buffer);
+
+			// counters
+			private:
+				// number of packets received that we didn't handle
+				uint64_t unhandledRxPackets = 0;
+				// number of handled unicast packets
+				uint64_t handledRxUnicast = 0;
+				// number of handled multicast packets
+				uint64_t handledRxMulticast = 0;
+				// number of handled broadcast packets
+				uint64_t handledRxBroadcast = 0;
 
 			// ports we're listening on
 			private:

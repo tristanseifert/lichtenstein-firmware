@@ -10,6 +10,8 @@
 #include "UDPPrivate.h"
 #include "UDP.h"
 
+#include "UDPSocket.h"
+
 #include "IPv4.h"
 #include "IPv4Private.h"
 
@@ -20,6 +22,12 @@
 
 #include <cstddef>
 #include <cstring>
+
+// set to 1 to log when packets are handled
+#define LOG_HANDLING						1
+
+
+
 
 namespace ip {
 
@@ -69,22 +77,31 @@ void UDP::handleReceivedFrame(void *_rx, int type) {
 		if(listen->valid && listen->port == header->destPort) {
 			// if it's unicast, forward it
 			if(type == UNICAST) {
-				// TODO: handle packet
-				this->ipv4->releaseRxBuffer(rx);
+				// send it to the socket
+				listen->sock->receivedFrame(rx, UDPSocket::UNICAST);
+
+				// increment counter
+				this->handledRxUnicast++;
 
 				goto handled;
 			}
 			// if multicast is selected, ensure that the socket receives it
 			else if(type == MULTICAST && listen->acceptsMulticast) {
-				// TODO: handle packet
-				this->ipv4->releaseRxBuffer(rx);
+				// send it to the socket
+				listen->sock->receivedFrame(rx, UDPSocket::MULTICAST);
+
+				// increment counter
+				this->handledRxMulticast++;
 
 				goto handled;
 			}
 			// if broadcast is selected, ensure that the socket receives it
 			else if(type == BROADCAST && listen->acceptsBroadcast) {
-				// TODO: handle packet
-				this->ipv4->releaseRxBuffer(rx);
+				// send it to the socket
+				listen->sock->receivedFrame(rx, UDPSocket::BROADCAST);
+
+				// increment counter
+				this->handledRxBroadcast++;
 
 				goto handled;
 			}
@@ -99,8 +116,224 @@ discard: ;
 	// if we get down here, discard the packet since nobody is handling it
 	this->ipv4->releaseRxBuffer(rx);
 
+	this->unhandledRxPackets++;
+
+#if LOG_HANDLING
+	LOG(S_DEBUG, "Unhandled RX packets: %u", this->unhandledRxPackets);
+#endif
+
 	// clean-up
 handled: ;
+}
+
+
+
+/**
+ * Allocates a new UDP socket, without any bindings set up.
+ */
+UDPSocket *UDP::createSocket(void) {
+	return new UDPSocket(this);
+}
+
+
+
+/**
+ * Registers the given socket for listening on a certain port.
+ */
+int UDP::bindSocketForPort(UDPSocket *sock, uint16_t port) {
+	size_t i;
+	int err = UDP::ErrSuccess;
+
+	// check the port isn't already used
+	for(i = 0; i < UDP::listenPortsEntries; i++) {
+		udp_listen_t *listen = &this->listenPorts[i];
+
+		// if it's valid and port is equal, the port is in use
+		if(listen->valid && listen->port == port) {
+			LOG(S_ERROR, "Port %u is already in use", port);
+
+			err = UDP::ErrPortInUse; goto done;
+		}
+	}
+
+	// find an empty entry and write this socket into it
+	for(i = 0; i < UDP::listenPortsEntries; i++) {
+		udp_listen_t *listen = &this->listenPorts[i];
+
+		// if it's invalid, fill it in
+		if(!listen->valid) {
+			// zero this entry
+			memset(listen, 0, sizeof(udp_listen_t));
+
+			// fill in the various fields
+			listen->valid = true;
+
+			listen->port = port;
+			listen->sock = sock;
+
+			err = UDP::ErrSuccess; goto done;
+		}
+	}
+
+	// if we get down here, we couldn't find any space
+	LOG(S_ERROR, "No space to accept more listening sockets");
+	err = UDP::ErrNoBookkeepingSpace; goto done;
+
+
+	// clean up
+done: ;
+	return err;
+}
+
+/**
+ * Removes any bindings for the given socket.
+ */
+void UDP::unbindSocket(UDPSocket *sock) {
+	unsigned int removed = 0;
+
+	// iterate over each entry
+	for(size_t i = 0; i < UDP::listenPortsEntries; i++) {
+		udp_listen_t *listen = &this->listenPorts[i];
+
+		// if it's valid and the socket is equal, remove it
+		if(listen->valid && listen->sock == sock) {
+			// invalidate the entry
+			listen->valid = false;
+
+			removed++;
+		}
+	}
+
+	// logging
+	LOG(S_DEBUG, "Removed %u mappings for socket 0x%x", removed, sock);
+}
+
+
+
+/**
+ * Finds the given socket in the listening array, and sets its multicast
+ * reception flag.
+ */
+int UDP::setMulticastReceptionState(UDPSocket *sock, bool enabled) {
+	// search through all listening entries
+	for(size_t i = 0; i < UDP::listenPortsEntries; i++) {
+		udp_listen_t *listen = &this->listenPorts[i];
+
+		// is this entry valid and is the socket pointer equal?
+		if(listen->valid && listen->sock == sock) {
+			// update the multicast flag
+			listen->acceptsMulticast = (enabled == true) ? 1 : 0;
+			return 0;
+		}
+	}
+
+	// if we get down here, the socket isn't listening?
+	return -1;
+}
+
+/**
+ * Finds the given socket in the listening array, and sets its broadcast
+ * reception flag.
+ */
+int UDP::setBroadcastReceptionState(UDPSocket *sock, bool enabled) {
+	// search through all listening entries
+	for(size_t i = 0; i < UDP::listenPortsEntries; i++) {
+		udp_listen_t *listen = &this->listenPorts[i];
+
+		// is this entry valid and is the socket pointer equal?
+		if(listen->valid && listen->sock == sock) {
+			// update the broadcast flag
+			listen->acceptsBroadcast = (enabled == true) ? 1 : 0;
+			return 0;
+		}
+	}
+
+	// if we get down here, the socket isn't listening?
+	return -1;
+}
+
+
+
+/**
+ * Allocates a transmit buffer.
+ */
+udp_tx_packet_t *UDP::getTxBuffer(UDPSocket *sock, size_t payloadLength, int timeout) {
+	// attempt to get a tx buffer
+	size_t responseSize = sizeof(udp_header_ipv4_t);
+	responseSize += payloadLength;
+
+	void *_tx = this->ipv4->getIPv4TxBuffer(responseSize, kIPv4ProtocolUDP, timeout);
+	stack_ipv4_tx_packet_t *tx = (stack_ipv4_tx_packet_t *) _tx;
+
+	if(tx == nullptr) {
+		// exit if we can't get a buffer
+		LOG(S_ERROR, "Couldn't get transmit buffer");
+		return nullptr;
+	}
+
+	// allocate the tx packet
+	udp_tx_packet_t *packet;
+	packet = (udp_tx_packet_t *) pvPortMalloc(sizeof(udp_tx_packet_t));
+
+	if(packet == nullptr) {
+		// exit if we can't allocate the tx packet
+		this->ipv4->discardTxBuffer(tx);
+
+		LOG(S_ERROR, "Couldn't allocate tx packet");
+		return nullptr;
+	}
+
+	packet->ipTx = tx;
+
+	// populate the UDP header
+	udp_header_ipv4_t *udpHeader = (udp_header_ipv4_t *) tx->payload;
+
+	udpHeader->checksum = 0x0000; // inserted by MAC
+	udpHeader->length = ((uint16_t) (sizeof(udp_header_ipv4_t) + payloadLength));
+
+	// set the location of the payload and finish
+	packet->payload = ((uint8_t *) udpHeader) + sizeof(udp_header_ipv4_t);
+
+	return packet;
+}
+
+/**
+ * Discards a transmit buffer without sending it.
+ */
+int UDP::discardTxBuffer(__attribute__((unused)) UDPSocket *sock,
+		udp_tx_packet_t *buffer) {
+	// discard IP TX buffer and deallocate the UDP tx packet
+	this->ipv4->discardTxBuffer(buffer->ipTx);
+	vPortFree(buffer);
+
+	return 0;
+}
+
+/**
+ * Queues a previously created transmit buffer for transmission.
+ */
+int UDP::sendTxBuffer(UDPSocket *sock, stack_ipv4_addr_t address, unsigned int port, udp_tx_packet_t *buffer) {
+	// set the destination address in the IP packet
+	this->ipv4->setIPv4Destination(buffer->ipTx, address);
+
+	// set the source/dest port in the UDP packet
+	udp_header_ipv4_t *udpHeader = (udp_header_ipv4_t *) buffer->ipTx->payload;
+
+	udpHeader->destPort = (uint16_t) port;
+	udpHeader->sourcePort = (uint16_t) sock->localPort;
+
+	this->packetHostToNetwork(udpHeader);
+
+	// transmit the buffer
+	if(this->ipv4->transmitIPv4TxBuffer(buffer->ipTx) == false) {
+		LOG(S_ERROR, "Couldn't send buffer");
+		return UDP::ErrTxFailure;
+	}
+
+	// success; free the tx structure
+	vPortFree(buffer);
+
+	return UDP::ErrSuccess;
 }
 
 

@@ -29,15 +29,53 @@ namespace ip {
 			 * Socket options
 			 */
 			typedef enum {
+				/**
+				 * Are broadcast packets accepted?
+				 *
+				 * Type: bool
+				 */
+				kSockOptAcceptBroadcast,
 
+				/**
+				 * Are multicast packets accepted?
+				 *
+				 * Type: bool
+				 */
+				kSockOptAcceptMulticast,
 			} socket_option_t;
 
 			/**
 			 * Various protocols that can have their options set
 			 */
 			typedef enum {
+				kSocketProtocolInternal,
 
+				kSocketProtocolIPv4,
+				kSocketProtocolUDP
 			} socket_protocol_t;
+
+			/**
+			 * Socket errors
+			 */
+			enum {
+				ErrSuccess					= 0,
+
+				ErrTimeout					= -10000,
+				ErrReceiveIO					= -10001,
+				ErrMemory					= -10002,
+				ErrUnknownBuffer				= -10003,
+				ErrNotConnected				= -10004,
+				ErrNoBookkeepingSpace		= -10005,
+				ErrInvalidProtocol			= -10006,
+				ErrInvalidOption				= -10007,
+				ErrInvalidOptionLength		= -10008,
+				ErrPortInUse					= -10009,
+
+				ErrNotOpen					= -20000,
+				ErrNotClosed					= -20001,
+
+				ErrUnimplemented				= -30000,
+			};
 
 		public:
 			virtual ~Socket();
@@ -64,7 +102,7 @@ namespace ip {
 			 *
 			 * @return 0 if successful, an error code otherwise.
 			 */
-			virtual int receive(void **buffer, size_t *bytesRead, int timeout = -1) = 0;
+			virtual int receive(void **buffer, size_t *bytesRead, unsigned int timeout = -1) = 0;
 
 			/**
 			 * Indicates to the stack that the application has finished
@@ -98,7 +136,7 @@ namespace ip {
 			 *
 			 * @return 0 if successful, an error code otherwise.
 			 */
-			virtual int prepareTx(void **buffer, size_t length, int timeout = -1) = 0;
+			virtual int prepareTx(void **buffer, size_t length, unsigned int timeout = -1) = 0;
 
 			/**
 			 * Transmits a buffer that was retrieved with an earlier call to
@@ -112,7 +150,7 @@ namespace ip {
 			 *
 			 * @return 0 if successful, an error code otherwise.
 			 */
-			virtual int queueTx(void *buffer, int timeout = -1) = 0;
+			virtual int queueTx(void *buffer, unsigned int timeout = -1) = 0;
 
 			/**
 			 * Discards a buffer retrieved by a call to `prepareTx` without

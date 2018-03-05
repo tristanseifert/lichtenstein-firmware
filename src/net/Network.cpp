@@ -12,6 +12,8 @@
 #include "EthPHY.h"
 
 #include "ip/Stack.h"
+#include "ip/IPv4.h"
+#include "ip/UDP.h"
 
 #include "../board/Board.h"
 #include "../clock/Clock.h"
@@ -530,7 +532,7 @@ void Network::handleTransmittedFrame(network_message_t *msg) {
  * Attempts to acquire a transmit buffer. If no buffers are available, this
  * routine blocks until one can be acquired.
  */
-void *Network::getTxBuffer(size_t size) {
+void *Network::getTxBuffer(size_t size, int timeout) {
 	BaseType_t ok;
 	unsigned int freeBuffer = 0xFFFFFFFF;
 
@@ -540,8 +542,13 @@ void *Network::getTxBuffer(size_t size) {
 		return nullptr;
 	}
 
+	// handle negative timeouts
+	if(timeout < 0) {
+		timeout = portMAX_DELAY;
+	}
+
 	// attempt to take the semaphore
-	ok = xSemaphoreTake(this->txBuffersFreeSemaphore, portMAX_DELAY);
+	ok = xSemaphoreTake(this->txBuffersFreeSemaphore, timeout);
 
 	if(ok != pdPASS) {
 		LOG(S_ERROR, "Couldn't take tx buffers semaphore");
@@ -680,6 +687,15 @@ int Network::registerMulticastMAC(uint8_t *address) {
  */
 int Network::unregisterMulticastMAC(uint8_t *address) {
 	return this->mac->setMulticastAddr(address, false);
+}
+
+
+
+/**
+ * Returns an UDP socket.
+ */
+ip::UDPSocket *Network::getUDPSocket(void) noexcept {
+	return Network::sharedInstance()->stack->createUDPSocket();
 }
 
 

@@ -24,8 +24,11 @@ namespace ip {
 	class Stack;
 	class ICMP;
 	class UDP;
+	class UDPSocket;
 
 	class IPv4 {
+		friend class Stack;
+
 		public:
 			IPv4(Stack *_s);
 			virtual ~IPv4();
@@ -47,8 +50,9 @@ namespace ip {
 
 		// API for IP protocols to get TX buffers
 		public:
-			void *getIPv4TxBuffer(size_t payloadLength, uint8_t protocol);
+			void *getIPv4TxBuffer(size_t payloadLength, uint8_t protocol, int timeout = -1);
 			bool transmitIPv4TxBuffer(void *buffer);
+			bool discardTxBuffer(void *buffer);
 
 			void setIPv4Destination(void *buffer, stack_ipv4_addr_t addr);
 			void setIPv4Source(void *buffer, stack_ipv4_addr_t addr);

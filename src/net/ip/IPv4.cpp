@@ -255,14 +255,19 @@ int IPv4::removeMulticastAddress(stack_ipv4_addr_t addr) {
  *
  * @return A pointer to an opaque IPv4 buffer if successful, nullptr otherwise.
  */
-void *IPv4::getIPv4TxBuffer(size_t payloadLength, uint8_t protocol) {
+void *IPv4::getIPv4TxBuffer(size_t payloadLength, uint8_t protocol, int timeout) {
 	stack_tx_packet_t *tx;
+
+	// handle negative timeouts
+	if(timeout < 0) {
+		timeout = portMAX_DELAY;
+	}
 
 	// request a transmit buffer
 	size_t totalLength = sizeof(net_ipv4_packet_t);
 	totalLength += payloadLength;
 
-	tx = (stack_tx_packet_t *) this->stack->getTxPacket(totalLength);
+	tx = (stack_tx_packet_t *) this->stack->getTxPacket(totalLength, timeout);
 
 	if(tx == nullptr) {
 		LOG(S_ERROR, "Couldn't get TX buffer for IPv4 packet!");
@@ -373,6 +378,24 @@ bool IPv4::transmitIPv4TxBuffer(void *_buffer) {
 	vPortFree(_buffer);
 
 	// if we get down here, assume success
+	return true;
+}
+
+/**
+ * Discards an IP buffer without transmitting it.
+ */
+bool IPv4::discardTxBuffer(void *_buffer) {
+	stack_ipv4_tx_packet_t *packet = (stack_ipv4_tx_packet_t *) _buffer;
+
+	// parameter checking
+	if(_buffer == nullptr) {
+		return false;
+	}
+
+	// discard the packet and deallocate the buffer
+	this->stack->discardTXPacket(packet->stackBuffer);
+	vPortFree(_buffer);
+
 	return true;
 }
 
