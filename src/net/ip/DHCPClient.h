@@ -52,8 +52,6 @@ namespace ip {
 
 			// task
 			TaskHandle_t task = nullptr;
-			// timeout timer
-			TimerHandle_t timeoutTimer = nullptr;
 
 			// this mutex is given every time the state changes
 			SemaphoreHandle_t stateChangeMutex = nullptr;
@@ -75,6 +73,11 @@ namespace ip {
 				WAITACK,
 				// set the IP configuration
 				SUCCESS,
+
+				// renew the existing lease
+				RENEW,
+				// wait for a DHCPACK for the renew
+				WAITRENEWACK,
 
 				// if any of the waits time out, go here
 				TIMEOUT
@@ -121,11 +124,16 @@ namespace ip {
 			}
 
 		private:
+			// renewal timer: expires after 1/2 of the lease duration
+			TimerHandle_t renewalTimer = nullptr;
+
+		private:
 			int parseOptions(void *);
 
 			void printOfferInfo(void);
 
 		private:
+			friend void _DHCPRenewTimeout(TimerHandle_t);
 			friend void _DHCPClientTaskTrampoline(void *);
 
 			int taskEntry(void);
@@ -135,6 +143,13 @@ namespace ip {
 			void taskSendRequest(void);
 			void taskHandleAck(void);
 			void taskUpdateIPConfig(void);
+
+			void taskRenewLease(void);
+			void taskRenewWaitAck(void);
+
+			void setUpRenewalTimer(void);
+
+			void fillRequestOptions(void *, size_t);
 	};
 
 } /* namespace ip */

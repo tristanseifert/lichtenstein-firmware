@@ -81,6 +81,11 @@ namespace ip {
 			bool isIPLocal(stack_ipv4_addr_t addr);
 			static bool isIPInSubnet(stack_ipv4_addr_t addr, stack_ipv4_addr_t netAddr, stack_ipv4_addr_t netmask);
 
+			void setHostname(const char *hostname);
+			const char *getHostname(void) const {
+				return this->hostname;
+			}
+
 		private:
 			// network handler (used to rx/tx packets)
 			Network *net = nullptr;
@@ -96,6 +101,9 @@ namespace ip {
 			stack_ipv4_addr_t netMask = 0xFFFFFFFF;
 			// router address
 			stack_ipv4_addr_t routerIp = 0x00000000;
+
+			// hostname
+			char *hostname = nullptr;
 
 			// ethernet header and CRC
 			static const size_t maxPayloadLength = net::EthMAC::MTU - 18 - 4;

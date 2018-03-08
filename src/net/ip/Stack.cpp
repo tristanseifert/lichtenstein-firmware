@@ -52,6 +52,9 @@ Stack::Stack(Network *n) : net(n) {
 //	this->ip = __builtin_bswap32(0xc0a800c8); // 192.168.0.200
 //	this->netMask = __builtin_bswap32(0xFFFFFF00);
 //	this->routerIp = __builtin_bswap32(0xac100d01);
+
+	// initialize default hostname
+	this->setHostname("lichtenstein");
 }
 
 /**
@@ -122,6 +125,26 @@ stack_ipv4_addr_t Stack::getIPAddress(void) const {
 	return this->ip;
 }
 
+/**
+ * Sets the hostname. This isn't really used outside of what the DHCP client
+ * will send when it requests a lease.
+ */
+void Stack::setHostname(const char *name) {
+	// free old hostname
+	if(this->hostname) {
+		vPortFree(this->hostname);
+	}
+
+	// allocate buffer for new hostname
+	size_t len = strlen(name) + 1;
+
+	this->hostname = (char *) pvPortMalloc(len);
+	memset(this->hostname, 0, len);
+
+	// copy the hostname
+	strncpy(this->hostname, name, len);
+}
+
 
 
 /**
@@ -132,9 +155,6 @@ void Stack::ipConfigBecameValid(void) {
 	// mark the IP config as valid
 	this->isIPv4ConfigValid = true;
 
-	// send a gratuitous ARP
-	this->arp->sendGratuitousARP();
-
 	// print info
 	char ipStr[16], mask[16], router[16];
 	Stack::ipToString(this->ip, ipStr, 16);
@@ -142,6 +162,9 @@ void Stack::ipConfigBecameValid(void) {
 	Stack::ipToString(this->routerIp, router, 16);
 
 	LOG(S_INFO, "IP configuration: %s, netmask %s, router %s", ipStr, mask, router);
+
+	// send a gratuitous ARP
+	this->arp->sendGratuitousARP();
 }
 
 

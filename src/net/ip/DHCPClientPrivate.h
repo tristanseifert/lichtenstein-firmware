@@ -19,6 +19,11 @@
 
 
 
+// maximum length of a hostname
+#define DHCP_MAX_HOSTNAME					0x7F
+
+
+
 // DHCP magic cookie value
 #define DHCP_COOKIE							0x63825363
 

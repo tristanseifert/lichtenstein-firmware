@@ -27,7 +27,9 @@
 // produce logs for the DHCP transaction
 #define LOG_DHCP_TRANSACTIONS				1
 // log info about any received DHCP offers
-#define LOG_OFFER							0
+#define LOG_OFFER							1
+// output logging for messages relating to the DHCP exiprity timer
+#define LOG_RENEWAL_TIMER						1
 
 
 
@@ -60,7 +62,7 @@ static const uint8_t discoverOptions[] = {
  * - 53: 3 (DHCP Request)
  */
 static const uint8_t requestOptions[] = {
-	// DHCP discover
+	// DHCP request
 	kDHCPOptionMessageType, 1, kDHCPMessageTypeRequest,
 
 	// requested IP address (this is what the offer specified)
@@ -69,12 +71,43 @@ static const uint8_t requestOptions[] = {
 	kDHCPOptionServerAddress, 4, 0xff, 0xff, 0xff, 0xff,
 
 	// hostname
-	kDHCPOptionsHostname, 12, 0x6c, 0x69, 0x63, 0x68, 0x74, 0x65, 0x6e, 0x73, 0x74, 0x65, 0x69, 0x6e,
+	kDHCPOptionsHostname, 0,
 
 	// end
 	kDHCPOptionEnd,
 };
 
+
+/**
+ * Options sent in a DHCPREQUEST message for renewal
+ *
+ * - 50: 0xffffffff (filled in with the offered IP address)
+ * - 54: 0xffffffff (filled in with the IP address of the DHCP server)
+ * - 53: 3 (DHCP Request)
+ */
+static const uint8_t renewOptions[] = {
+	// DHCP discover
+	kDHCPOptionMessageType, 1, kDHCPMessageTypeRequest,
+
+	// requested IP address (this is our current address)
+	kDHCPOptionRequestedAddress, 4, 0xff, 0xff, 0xff, 0xff,
+	// server IP address
+	kDHCPOptionServerAddress, 4, 0xff, 0xff, 0xff, 0xff,
+
+	// parameter request list
+	kDHCPOptionRequestedOptions, 10,
+		kDHCPOptionSubnetMask, kDHCPOptionRouter, kDHCPOptionDNS,
+		kDHCPOptionsSyslogServer, kDHCPOptionsTFTPServer,
+		kDHCPOptionsBootFileName, kDHCPOptionServerAddress,
+		kDHCPOptionLeaseTime, kDHCPOptionsNTPServer,
+		kDHCPOptionsUTCOffset,
+
+	// hostname
+	kDHCPOptionsHostname, 0,
+
+	// end
+	kDHCPOptionEnd,
+};
 
 namespace ip {
 
@@ -84,6 +117,23 @@ namespace ip {
 void  _DHCPClientTaskTrampoline(void *ctx) {
 	(static_cast<DHCPClient *>(ctx))->taskEntry();
 }
+
+/**
+ * DHCP expiry timer
+ */
+void _DHCPRenewTimeout(TimerHandle_t timer) {
+	void *ctx = pvTimerGetTimerID(timer);
+	DHCPClient *client = static_cast<DHCPClient *>(ctx);
+
+#if LOG_RENEWAL_TIMER
+	LOG(S_DEBUG, "Renewal timer expired");
+#endif
+
+	// change into the RENEW state
+	client->changeState(DHCPClient::RENEW);
+}
+
+
 
 /**
  * Initializes the DHCP client.
@@ -113,9 +163,9 @@ DHCPClient::DHCPClient(Stack *_stack) : stack(_stack) {
  */
 DHCPClient::~DHCPClient() {
 	// clean up task and timer
-	if(this->timeoutTimer) {
-		xTimerDelete(this->timeoutTimer, portMAX_DELAY);
-		this->timeoutTimer = nullptr;
+	if(this->renewalTimer) {
+		xTimerDelete(this->renewalTimer, portMAX_DELAY);
+		this->renewalTimer = nullptr;
 	}
 
 	if(this->task) {
@@ -141,6 +191,15 @@ void DHCPClient::requestIP(void) {
 		return;
 	}
 
+	// clear info from the previous DHCP offer
+	memset(&this->offer, 0, sizeof(this->offer));
+
+	// make sure all timers are stopped
+	if(this->renewalTimer) {
+		xTimerDelete(this->renewalTimer, portMAX_DELAY);
+		this->renewalTimer = nullptr;
+	}
+
 	// change state
 	this->changeState(DISCOVER);
 }
@@ -154,6 +213,12 @@ void DHCPClient::reset(void) {
 
 	// switch to idle state
 	this->changeState(IDLE);
+
+	// stop timers
+	if(this->renewalTimer) {
+		xTimerDelete(this->renewalTimer, portMAX_DELAY);
+		this->renewalTimer = nullptr;
+	}
 }
 
 
@@ -214,14 +279,6 @@ int DHCPClient::taskEntry(void) {
 
 		// handle the state
 		switch(this->state) {
-			// timeout waiting for response
-			case TIMEOUT: {
-				LOG(S_ERROR, "Timeout waiting for DHCP response");
-
-				this->changeState(IDLE);
-				break;
-			}
-
 			// send a DHCPDISCOVER
 			case DISCOVER: {
 #if LOG_STATE_TRANSITIONS
@@ -264,11 +321,62 @@ int DHCPClient::taskEntry(void) {
 				break;
 			}
 
+			// renew lease
+			case RENEW: {
+#if LOG_STATE_TRANSITIONS
+				LOG(S_DEBUG, "Renewing lease");
+#endif
+
+				this->taskRenewLease();
+				break;
+			}
+			// wait for acknowledgement of renewal request
+			case WAITRENEWACK: {
+#if LOG_STATE_TRANSITIONS
+				LOG(S_DEBUG, "Waiting for renewal ack");
+#endif
+
+				this->taskRenewWaitAck();
+				break;
+			}
+
 
 			// idle state: do nothing
 			case IDLE: {
+				void *buffer;
+				size_t bytesRead;
+
+				// read from the socket (get stuck packets; 100ms timeout)
+				err = this->sock->receive(&buffer, &bytesRead,
+						(100 / portTICK_PERIOD_MS));
+
+				// ignore timeouts by plopping back into the IDLE state
+				if(err == Socket::ErrTimeout) {
+					this->changeState(this->state);
+					break;
+				}
+				// ignore read errors
+				else if(err != Socket::ErrSuccess) {
+					LOG(S_ERROR, "Error reading socket: %d", err);
+
+					// retry read
+					this->changeState(this->state);
+					break;
+				}
+
+				// otherwise, discard the received packet
+				this->sock->discardRx(buffer);
 				break;
 			}
+			// timeout waiting for response
+			case TIMEOUT: {
+				LOG(S_ERROR, "Timeout waiting for DHCP response");
+
+				this->changeState(IDLE);
+				break;
+			}
+
+
 			// default (should never get here)
 			default:
 				LOG(S_ERROR, "Invalid state %u", this->state);
@@ -435,7 +543,14 @@ void DHCPClient::taskSendRequest(void) {
 	void *buffer;
 
 	// get a TX buffer
-	const size_t bytes = sizeof(dhcp_packet_ipv4_t) + sizeof(requestOptions);
+	size_t hostnameLength = strlen(this->stack->getHostname());
+
+	if(hostnameLength > DHCP_MAX_HOSTNAME) {
+		hostnameLength = DHCP_MAX_HOSTNAME;
+	}
+
+	size_t bytes = sizeof(dhcp_packet_ipv4_t) + sizeof(requestOptions);
+	bytes += hostnameLength;
 
 	err = this->sock->prepareTx(&buffer, bytes);
 
@@ -470,42 +585,7 @@ void DHCPClient::taskSendRequest(void) {
 
 
 	// copy the server and offer IP addresses into the options
-	bool end = false;
-	uint8_t *opt = dhcp->options;
-
-	while(!end) {
-		uint8_t option = *opt++;
-
-		switch(option) {
-			// server IP address?
-			case kDHCPOptionServerAddress: {
-				uint8_t length = *opt++;
-
-				// copy server address
-				memcpy(opt, &this->offer.serverAddress, 4);
-
-				// increment length
-				opt += length;
-				break;
-			}
-			// requested IP address?
-			case kDHCPOptionRequestedAddress: {
-				uint8_t length = *opt++;
-
-				// copy the offered address
-				memcpy(opt, &this->offer.address, 4);
-
-				// increment length
-				opt += length;
-				break;
-			}
-
-			// end of list?
-			case kDHCPOptionEnd:
-				end = true;
-				break;
-		}
-	}
+	this->fillRequestOptions(dhcp, hostnameLength);
 
 
 	// send TX buffer
@@ -621,8 +701,284 @@ void DHCPClient::taskUpdateIPConfig(void) {
 	// mark it as valid
 	this->stack->ipConfigBecameValid();
 
+	// set up renewal timer
+	this->setUpRenewalTimer();
+
 	// go back to the idle state
 	this->changeState(IDLE);
+}
+
+/**
+ * Attempts to renew the lease by sending a DHCPREQUEST to the server from
+ * which we received the lease originally.
+ */
+void DHCPClient::taskRenewLease(void) {
+	int err;
+	void *buffer;
+
+	// get a random number as the transaction id
+	this->currentXID = 0xCAFEBABE; // TODO: randomize this
+
+	// get a TX buffer
+	size_t hostnameLength = strlen(this->stack->getHostname());
+
+	if(hostnameLength > DHCP_MAX_HOSTNAME) {
+		hostnameLength = DHCP_MAX_HOSTNAME;
+	}
+
+	size_t bytes = sizeof(dhcp_packet_ipv4_t) + sizeof(renewOptions);
+	bytes += hostnameLength;
+
+
+	err = this->sock->prepareTx(&buffer, bytes);
+
+	if(err != Socket::ErrSuccess) {
+		LOG(S_ERROR, "Couldn't get TX buffer: %d", err);
+
+		this->changeState(IDLE);
+		return;
+	}
+
+	memset(buffer, 0, bytes);
+
+
+	// fill in the DHCP packet
+	dhcp_packet_ipv4_t *dhcp = (dhcp_packet_ipv4_t *) buffer;
+
+	dhcp->op = kDHCPOpCodeRequest;
+	dhcp->htype = kDHCPHardwareTypeEthernet;
+	dhcp->hlen = 6;
+
+	dhcp->hardwareAddr.mac = this->stack->mac;
+
+	dhcp->xid = this->currentXID;
+	dhcp->cookie = DHCP_COOKIE;
+
+	// write the server's address in the packet
+	dhcp->replyAddr = this->offer.serverAddress;
+
+	// we have a valid IP address now so copy it
+	dhcp->clientAddr = this->stack->ip;
+
+	// copy options
+	memcpy(dhcp->options, renewOptions, sizeof(renewOptions));
+
+
+	// copy the server and offer IP addresses into the options
+	this->fillRequestOptions(dhcp, hostnameLength);
+
+	// unicast TX buffer to the DHCP server
+	this->packetHostToNetwork(dhcp);
+
+	err = this->sock->sendTo(buffer, this->offer.serverAddress, DHCP_SERVER_PORT);
+
+	// if an error occurred, restart the DHCP process
+	if(err != Socket::ErrSuccess) {
+		LOG(S_ERROR, "Couldn't send TX buffer: %d; restarting DHCP process", err);
+
+		this->changeState(DISCOVER);
+		return;
+	}
+
+
+	// wait for a DHCPACK
+	this->changeState(WAITRENEWACK);
+}
+
+/**
+ * Waits for an acknowledgement from the DHCP server. If we receive a DHCPACK,
+ * the lease was renewed and we update the parameters of the lease. If a
+ * DHCPNACK is received instead, get a new lease.
+ */
+void DHCPClient::taskRenewWaitAck(void) {
+	int err;
+
+	void *buffer;
+	size_t bytesRead;
+
+	// read from the socket
+	err = this->sock->receive(&buffer, &bytesRead, DHCPClient::receiveTimeout);
+
+	// was the error a timeout?
+	if(err == Socket::ErrTimeout) {
+		this->changeState(TIMEOUT);
+		return;
+	}
+	// handle other read errors by retrying the read
+	else if(err != Socket::ErrSuccess) {
+		LOG(S_ERROR, "Error reading socket: %d", err);
+
+		// retry read
+		this->changeState(this->state);
+		return;
+	}
+
+	// byteswap the received packet
+	dhcp_packet_ipv4_t *dhcp = (dhcp_packet_ipv4_t *) buffer;
+	this->packetNetworkToHost(dhcp);
+
+
+	// Read again if the XID is not matching
+	if(dhcp->xid != this->currentXID) {
+		LOG(S_INFO, "Received DHCP packet for another client");
+
+		this->changeState(WAITOFFER);
+		goto cleanup;
+	}
+
+
+	// make sure that the opcode and MAC address match
+	if(dhcp->op != kDHCPOpCodeReply) {
+		LOG(S_ERROR, "invalid opcode %d", dhcp->op);
+
+		this->changeState(IDLE);
+		goto cleanup;
+	}
+	if(dhcp->hardwareAddr.mac != this->stack->mac) {
+		LOG(S_ERROR, "invalid MAC address");
+
+		this->changeState(IDLE);
+		goto cleanup;
+	}
+
+
+	// parse the options
+	err = this->parseOptions(dhcp);
+
+	// did we receive a negative ack?
+	if(err == kDHCPMessageTypeNack) {
+		LOG(S_INFO, "Received NACK from DHCP server, getting new lease!");
+
+		this->changeState(DISCOVER);
+		goto cleanup;
+	}
+	// did we receive a message other than a positive ack?
+	else if(err != kDHCPMessageTypeAck) {
+		LOG(S_ERROR, "Invalid response: %d; getting new lease", err);
+
+		this->changeState(DISCOVER);
+		goto cleanup;
+	}
+	// the message was an ack, so copy some relevant fields
+	else {
+		this->offer.address = dhcp->yourAddr;
+	}
+
+#if LOG_OFFER
+	this->printOfferInfo();
+#endif
+
+
+	// change the IP config next
+	this->changeState(SUCCESS);
+
+	// perform cleanup (return RX buffer)
+cleanup: ;
+	this->sock->discardRx(buffer);
+}
+
+
+
+/**
+ * Fills the options in a request packet with the appropriate data.
+ *
+ * @note If the hostname should be filled, it must be the last element in the
+ * options list.
+ */
+void DHCPClient::fillRequestOptions(void *_dhcp, size_t hostnameLength) {
+	dhcp_packet_ipv4_t *dhcp = (dhcp_packet_ipv4_t *) _dhcp;
+
+	// fill the server address, requested address, and hostname
+	bool end = false;
+	uint8_t *opt = dhcp->options;
+
+	while(!end) {
+		uint8_t option = *opt++;
+
+		switch(option) {
+			// server IP address?
+			case kDHCPOptionServerAddress: {
+				uint8_t length = *opt++;
+
+				// copy server address
+				memcpy(opt, &this->offer.serverAddress, 4);
+
+				// increment length
+				opt += length;
+				break;
+			}
+			// requested IP address?
+			case kDHCPOptionRequestedAddress: {
+				uint8_t length = *opt++;
+
+				// copy the offered address
+				memcpy(opt, &this->offer.address, 4);
+
+				// increment length
+				opt += length;
+				break;
+			}
+			// hostname?
+			case kDHCPOptionsHostname: {
+				// write the length
+				*opt++ = (uint8_t) hostnameLength;
+
+				// copy the hostname
+				memcpy(opt, this->stack->getHostname(), hostnameLength);
+
+				// terminate the options list
+				opt += hostnameLength;
+
+				*opt++ = kDHCPOptionEnd;
+				break;
+			}
+
+			// end of list?
+			case kDHCPOptionEnd:
+				end = true;
+				break;
+		}
+	}
+}
+
+/**
+ * Sets up the lease renewal timer. This timer fires after half the lease
+ * time has expired.
+ */
+void DHCPClient::setUpRenewalTimer(void) {
+	BaseType_t ok;
+
+	// get the period, in ticks
+	TickType_t period = (this->offer.leaseExpiration * 1000) / 2;
+	period /= portTICK_PERIOD_MS;
+
+	// XXX: debug
+//	period = 30000 / portTICK_PERIOD_MS;
+
+	// cancel the old timer if it's set
+	if(this->renewalTimer) {
+		xTimerDelete(this->renewalTimer, portMAX_DELAY);
+		this->renewalTimer = nullptr;
+	}
+
+	// create timer
+#if LOG_RENEWAL_TIMER
+	LOG(S_DEBUG, "DHCP timer fires in %u ticks", period);
+#endif
+
+	this->renewalTimer = xTimerCreate("DHCPRenew", period, pdFALSE, this,
+			_DHCPRenewTimeout);
+
+	if(this->renewalTimer == nullptr) {
+		LOG(S_FATAL, "Couldn't create DHCP renewal timer");
+	}
+
+	// start timer
+	ok = xTimerStart(this->renewalTimer, portMAX_DELAY);
+
+	if(ok != pdPASS) {
+		LOG(S_FATAL, "Couldn't start DHCP renewal timer");
+	}
 }
 
 
