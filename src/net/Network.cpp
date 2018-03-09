@@ -22,7 +22,7 @@
 
 #include <cstring>
 
-// hardware config for EEPROM
+// hardware config
 #if HW == HW_MUSTARD
 
 // use the RMII interface

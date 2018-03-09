@@ -23,13 +23,13 @@
 
 
 // log state transitions
-#define LOG_STATE_TRANSITIONS				1
+#define LOG_STATE_TRANSITIONS				0
 // produce logs for the DHCP transaction
-#define LOG_DHCP_TRANSACTIONS				1
+#define LOG_DHCP_TRANSACTIONS				0
 // log info about any received DHCP offers
-#define LOG_OFFER							1
+#define LOG_OFFER							0
 // output logging for messages relating to the DHCP exiprity timer
-#define LOG_RENEWAL_TIMER						1
+#define LOG_RENEWAL_TIMER					0
 
 
 

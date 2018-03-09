@@ -22,6 +22,7 @@
 
 namespace ip {
 	class Stack;
+	class IGMP;
 	class ICMP;
 	class UDP;
 	class UDPSocket;
@@ -89,6 +90,7 @@ namespace ip {
 			size_t multicastFilterRefCount[multicastFilterSize];
 
 		private:
+			IGMP *igmp = nullptr;
 			ICMP *icmp = nullptr;
 			UDP *udp = nullptr;
 

@@ -12,6 +12,7 @@
 #include "Stack.h"
 #include "StackPrivate.h"
 
+#include "IGMP.h"
 #include "ICMP.h"
 #include "UDP.h"
 
@@ -38,6 +39,7 @@ IPv4::IPv4(Stack *_s) : stack(_s) {
 	memset(this->multicastFilterRefCount, 0, sizeof(this->multicastFilterRefCount));
 
 	// set up protocol handlers
+	this->igmp = new IGMP(_s, this);
 	this->icmp = new ICMP(_s, this);
 	this->udp = new UDP(_s, this);
 }
@@ -47,6 +49,7 @@ IPv4::IPv4(Stack *_s) : stack(_s) {
  */
 IPv4::~IPv4() {
 	// deallocate protocol handlers
+	delete this->igmp;
 	delete this->icmp;
 	delete this->udp;
 }
@@ -155,6 +158,11 @@ void IPv4::handleIPv4Frame(void *_packet) {
 				// handle multicasted UDP
 				case kIPv4ProtocolUDP:
 					this->udp->processMulticastFrame(rx);
+					break;
+
+				// handle multicasted IGMP
+				case kIPv4ProtocolIGMP:
+					this->igmp->processMulticastFrame(rx);
 					break;
 
 				// unhandled protocol
