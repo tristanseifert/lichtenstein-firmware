@@ -76,6 +76,16 @@ static const stack_ipv4_addr_t kIPv4AddressZero = 0x00000000;
  */
 static const stack_ipv4_addr_t kIPv4AddressBroadcast = 0xFFFFFFFF;
 
+/**
+ * Multicast address for all hosts
+ */
+static const stack_ipv4_addr_t kIPv4AddressAllHosts = 0xE0000001;
+
+/**
+ * Multicast address for all routers
+ */
+static const stack_ipv4_addr_t kIPv4AddressAllRouters = 0xE0000002;
+
 
 
 /**

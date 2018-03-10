@@ -37,5 +37,32 @@ typedef struct __attribute__((__packed__)) {
 } igmp_packet_ipv4_t;
 
 
+typedef enum {
+	/**
+	 * Sends a membership report for the given address, indicating that we
+	 * are a member of that group.
+	 */
+	kIGMPSendMembershipForGroup				= 1,
+	/**
+	 * Sends a leave request for the given address.
+	 */
+	kIGMPSendLeaveGroup,
+} igmp_task_message_type_t;
+
+/**
+ * Messages passed to the IGMP task.
+ */
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wpadded"
+
+typedef struct {
+	// message type
+	igmp_task_message_type_t type;
+
+	// address of the group
+	stack_ipv4_addr_t address;
+} igmp_task_message_t;
+
+#pragma GCC diagnostic pop
 
 #endif /* NET_IP_IGMPPRIVATE_H_ */

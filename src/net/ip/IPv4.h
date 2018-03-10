@@ -25,11 +25,14 @@ namespace ip {
 	class IGMP;
 	class ICMP;
 	class UDP;
+
+	class Socket;
 	class UDPSocket;
 
 	class IPv4 {
 		friend class Stack;
 		friend class IGMP;
+		friend class Socket;
 
 		public:
 			IPv4(Stack *_s);

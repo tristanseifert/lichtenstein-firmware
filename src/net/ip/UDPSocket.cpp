@@ -451,8 +451,8 @@ int UDPSocket::setSockOpt(socket_protocol_t protocol, socket_option_t option, vo
 		return Socket::ErrInvalidOption;
 	}
 
-	// the sockopt must be unhandled if we get here
-	return Socket::ErrInvalidProtocol;
+	// handle it within the socket class
+	return Socket::setSockOpt(protocol, option, value, length);
 }
 
 /**

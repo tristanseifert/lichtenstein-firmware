@@ -19,6 +19,7 @@
 #pragma GCC diagnostic ignored "-Wpadded"
 
 namespace ip {
+	class IPv4;
 	class UDPSocket;
 
 	class Socket {
@@ -34,7 +35,7 @@ namespace ip {
 				 *
 				 * Type: bool
 				 */
-				kSockOptAcceptBroadcast,
+				kSockOptAcceptBroadcast = 1,
 
 				/**
 				 * Are multicast packets accepted?
@@ -42,6 +43,19 @@ namespace ip {
 				 * Type: bool
 				 */
 				kSockOptAcceptMulticast,
+
+				/**
+				 * Joins a multicast group.
+				 *
+				 * Type: stack_ipv4_addr_t
+				 */
+				kSockOptJoinMulticast,
+				/**
+				 * Leaves a multicast group.
+				 *
+				 * Type: stack_ipv4_addr_t
+				 */
+				kSockOptLeaveMulticast,
 			} socket_option_t;
 
 			/**
@@ -74,7 +88,9 @@ namespace ip {
 				ErrNotOpen					= -20000,
 				ErrNotClosed					= -20001,
 
-				ErrUnimplemented				= -30000,
+				ErrMulticastError			= -30000,
+
+				ErrUnimplemented				= -99999,
 			};
 
 		public:
@@ -247,6 +263,12 @@ namespace ip {
 			 */
 			virtual int getSockOpt(socket_protocol_t protocol, socket_option_t option, void *out, size_t length) = 0;
 
+
+		protected:
+			/**
+			 * Pointer to the IPv4 handler (used to set multicast stuff)
+			 */
+			IPv4 *ipv4 = nullptr;
 
 		protected:
 			/**

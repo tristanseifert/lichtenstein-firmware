@@ -48,6 +48,33 @@ namespace ip {
 		private:
 			uint64_t receivedPackets = 0;
 
+		// reply processing task
+		private:
+			friend void _IGMPTaskTrampoline(void *);
+
+			void taskEntry(void);
+
+			void taskSendMembershipReport(void *);
+			void taskSendLeaveGroup(void *);
+
+			bool postMessageToTask(void *, int timeout = portMAX_DELAY);
+
+		private:
+			// size of the ICMP task's stack, in words
+			static const size_t TaskStackSize = 150;
+			// priority of the ICMP task
+			static const int TaskPriority = 3;
+			// how many messages may be pending on the message queue at a time
+			static const size_t messageQueueSize = 4;
+
+			TaskHandle_t task = nullptr;
+			QueueHandle_t messageQueue = nullptr;
+
+		// helper functions called by the IPv4 stack to send IGMP messages
+		public:
+			void joinedGroup(stack_ipv4_addr_t address);
+			void leftGroup(stack_ipv4_addr_t address);
+
 		private:
 			Stack *stack = nullptr;
 			IPv4 *ipv4 = nullptr;

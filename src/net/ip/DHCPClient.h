@@ -42,7 +42,7 @@ namespace ip {
 			// DHCP task priority
 			static const int taskPriority = 1;
 			// task stack size
-			static const size_t taskStackSize = 200;
+			static const size_t taskStackSize = 150;
 
 			// timeout for receiving DHCP messages
 			static const TickType_t receiveTimeout = (5000 / portTICK_PERIOD_MS);

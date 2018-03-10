@@ -224,6 +224,9 @@ int IPv4::addMulticastAddress(stack_ipv4_addr_t addr) {
 			this->multicastFilter[i] = addr;
 			this->multicastFilterRefCount[i] = 1;
 
+			// send IGMP message
+			this->igmp->joinedGroup(addr);
+
 			return 0;
 		}
 	}
@@ -246,6 +249,9 @@ int IPv4::removeMulticastAddress(stack_ipv4_addr_t addr) {
 			if(this->multicastFilterRefCount[i]-- == 0)  {
 				// if its zero, we can delete it from the filter
 				this->multicastFilter[i] = kIPv4AddressZero;
+
+				// send IGMP message
+				this->igmp->joinedGroup(addr);
 
 				// TODO: shift everything below this address up one slice?
 			}
