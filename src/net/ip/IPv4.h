@@ -29,6 +29,7 @@ namespace ip {
 
 	class IPv4 {
 		friend class Stack;
+		friend class IGMP;
 
 		public:
 			IPv4(Stack *_s);

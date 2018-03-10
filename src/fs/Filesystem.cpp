@@ -378,6 +378,9 @@ int Filesystem::spiffsMount(bool triedFormat) {
 		LOG(S_ERROR, "error getting fs info: %d", ret);
 		return ret;
 	}
+
+	// if we get down here, we mounted successfully
+	return 0;
 }
 
 

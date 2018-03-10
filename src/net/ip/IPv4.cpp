@@ -183,6 +183,11 @@ void IPv4::handleIPv4Frame(void *_packet) {
  * Checks whether the multicast filter list contains the given address.
  */
 bool IPv4::isMulticastAddressAllowed(stack_ipv4_addr_t addr) {
+	// early abort for all zeroes address (should never happen)
+	if(addr == kIPv4AddressZero) {
+		return false;
+	}
+
 	// iterate over the entire buffer
 	for(size_t i = 0; i < IPv4::multicastFilterSize; i++) {
 		// does the address match?

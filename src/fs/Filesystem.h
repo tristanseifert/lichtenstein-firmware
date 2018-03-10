@@ -10,12 +10,14 @@
 
 #include "FSPrivate.h"
 
-#include "FreeRTOSConfig.h"
-#include "FreeRTOS.h"
-#include "task.h"
-#include "semphr.h"
+#include <LichtensteinApp.h>
+
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wpadded"
 
 #include "spiffs/src/spiffs.h"
+
+#pragma GCC diagnostic pop
 
 namespace fs {
 	class FlashHAL;

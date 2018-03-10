@@ -15,6 +15,9 @@
 /**
  * A log message as sent to the logger task.
  */
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wpadded"
+
 typedef struct {
 	/// severity of the message
 	logger_severity_t sev;
@@ -29,6 +32,8 @@ typedef struct {
 	// pointer to a buffer of log message (we need to free this)
 	char *buffer;
 } logger_message_t;
+
+#pragma GCC diagnostic pop
 
 
 

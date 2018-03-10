@@ -13,6 +13,9 @@
 #ifndef SYS_CPULOADPROFILER_H_
 #define SYS_CPULOADPROFILER_H_
 
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wpadded"
+
 namespace sys {
 	class CPULoadProfiler {
 		public:
@@ -57,5 +60,7 @@ namespace sys {
 	};
 
 } /* namespace sys */
+
+#pragma GCC diagnostic pop
 
 #endif /* SYS_CPULOADPROFILER_H_ */

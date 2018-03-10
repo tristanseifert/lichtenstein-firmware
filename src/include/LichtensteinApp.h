@@ -14,6 +14,9 @@
 #include "LoggerGlobal.h"
 
 // FreeRTOS
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wpadded"
+
 #include "FreeRTOSConfig.h"
 #include "FreeRTOS.h"
 #include "task.h"
@@ -21,10 +24,17 @@
 #include "queue.h"
 #include "timers.h"
 
+#pragma GCC diagnostic pop
+
 // CMSIS
 #include "cmsis_device.h"
 
 // snprintf-type functions
 #include <mini-printf/mini-printf.h>
+
+// useful includes
+#ifdef __cplusplus
+
+#endif
 
 #endif /* INCLUDE_LICHTENSTEINAPP_H_ */

@@ -17,6 +17,8 @@
 
 #include <LichtensteinApp.h>
 
+#include <sys/System.h>
+
 #include <cstdint>
 #include <cstring>
 
@@ -401,7 +403,7 @@ void DHCPClient::taskSendDiscover(void) {
 	void *buffer;
 
 	// get a random number as the transaction id
-	this->currentXID = 0xDEADBEEF; // TODO: randomize this
+	this->currentXID = System::sharedInstance()->random();
 
 	// get a TX buffer
 	const size_t bytes = sizeof(dhcp_packet_ipv4_t) + sizeof(discoverOptions);
@@ -717,7 +719,7 @@ void DHCPClient::taskRenewLease(void) {
 	void *buffer;
 
 	// get a random number as the transaction id
-	this->currentXID = 0xCAFEBABE; // TODO: randomize this
+	this->currentXID = System::sharedInstance()->random();
 
 	// get a TX buffer
 	size_t hostnameLength = strlen(this->stack->getHostname());
@@ -951,9 +953,6 @@ void DHCPClient::setUpRenewalTimer(void) {
 	// get the period, in ticks
 	TickType_t period = (this->offer.leaseExpiration * 1000) / 2;
 	period /= portTICK_PERIOD_MS;
-
-	// XXX: debug
-//	period = 30000 / portTICK_PERIOD_MS;
 
 	// cancel the old timer if it's set
 	if(this->renewalTimer) {

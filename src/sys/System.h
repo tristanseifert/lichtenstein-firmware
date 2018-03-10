@@ -8,11 +8,21 @@
 #ifndef SYS_SYSTEM_H_
 #define SYS_SYSTEM_H_
 
-#include "FreeRTOSConfig.h"
-#include "FreeRTOS.h"
-#include "timers.h"
+#include <cstddef>
+
+#include <LichtensteinApp.h>
 
 #include "CPULoadProfiler.h"
+#include "Random.h"
+
+// declare friend function types
+namespace sys {
+	void _CPULoadProfilerContextSwitch();
+	void _CPULoadProfilerTimerISR();
+}
+
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wpadded"
 
 class System {
 	friend class sys::CPULoadProfiler;
@@ -26,9 +36,18 @@ class System {
 		virtual ~System();
 
 	private:
+		// random number generator
+		sys::Random prng;
+
+	public:
+		uint32_t random(void) {
+			return this->prng.getRandom();
+		}
+
+	private:
 		friend void sys::_CPULoadProfilerContextSwitch();
 		friend void sys::_CPULoadProfilerTimerISR();
-		sys::CPULoadProfiler *cpuLoad;
+		sys::CPULoadProfiler cpuLoad;
 
 #if 1
 		TimerHandle_t cpuLoadOutputTimer;
@@ -36,12 +55,14 @@ class System {
 
 	public:
 		int getCPULoad(void) const {
-			return cpuLoad->getCPULoad();
+			return this->cpuLoad.getCPULoad();
 		}
 
 		int getCPUIdleTime(void) const {
-			return cpuLoad->getCPUIdleTime();
+			return this->cpuLoad.getCPUIdleTime();
 		}
 };
+
+#pragma GCC diagnostic pop
 
 #endif /* SYS_SYSTEM_H_ */

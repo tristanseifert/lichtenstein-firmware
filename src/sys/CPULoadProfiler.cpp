@@ -80,28 +80,28 @@ CPULoadProfiler::~CPULoadProfiler() {
  * ISR handler for the timer.
  */
 void _CPULoadProfilerTimerISR(void) {
-	CPULoadProfiler *p = System::sharedInstance()->cpuLoad;
+	CPULoadProfiler &p = System::sharedInstance()->cpuLoad;
 
 	if (TIM_GetITStatus(CPU_TIM_PERIPHERAL, TIM_IT_Update) != RESET) {
 		// clear flag
 		TIM_ClearITPendingBit(CPU_TIM_PERIPHERAL, TIM_IT_Update);
 
 		// are we currently in the idle task?
-		if(p->isInIdleTask) {
+		if(p.isInIdleTask) {
 			// if so, keep track of the time during this slice and reset it
-			p->idleTime += CPU_TIM_EXPIRE - p->lastTimerValueOnIdleEnter;
-			p->lastTimerValueOnIdleEnter = 0;
+			p.idleTime += CPU_TIM_EXPIRE - p.lastTimerValueOnIdleEnter;
+			p.lastTimerValueOnIdleEnter = 0;
 		} else {
 			// we don't have to do anything here
 		}
 
 		// reset the idle time value
-		p->lastIdleTime = p->idleTime;
-		p->idleTime = 0;
+		p.lastIdleTime = p.idleTime;
+		p.idleTime = 0;
 
 		// convert the idle time value into a percentage
 //		trace_printf("Time spent in idle task: %u\n", p->lastIdleTime);
-		p->lastIdleTime = (p->lastIdleTime / (CPU_TIM_EXPIRE / 100));
+		p.lastIdleTime = (p.lastIdleTime / (CPU_TIM_EXPIRE / 100));
 	}
 }
 
@@ -115,7 +115,7 @@ extern "C" void CPU_TIM_ISR_NAME(void) {
  * Right after the task is switched, this function is invoked.
  */
 void _CPULoadProfilerContextSwitch() {
-	System::sharedInstance()->cpuLoad->handleContextSwitchFromKernel();
+	System::sharedInstance()->cpuLoad.handleContextSwitchFromKernel();
 }
 
 extern "C" void _CPULoadProfilerTaskSwitchedIn() {

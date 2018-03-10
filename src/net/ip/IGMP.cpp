@@ -27,7 +27,14 @@ namespace ip {
  * Initializes the IGMP handler.
  */
 IGMP::IGMP(Stack *_stack, IPv4 *_ipv4) : stack(_stack), ipv4(_ipv4) {
-	// register for the multicast address
+	int err = 0;
+
+	// register for the all hosts (224.0.0.1) address
+//	err = this->ipv4->addMulticastAddress(0xe0000001);
+
+	if(err != 0) {
+		LOG(S_FATAL, "Couldn't subscribe to all hosts group");
+	}
 
 }
 
@@ -35,7 +42,8 @@ IGMP::IGMP(Stack *_stack, IPv4 *_ipv4) : stack(_stack), ipv4(_ipv4) {
  * Tears down the IGMP handler.
  */
 IGMP::~IGMP() {
-
+	// unregister for the all hosts (224.0.0.1) address
+	this->ipv4->removeMulticastAddress(0xe0000001);
 }
 
 

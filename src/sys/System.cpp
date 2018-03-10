@@ -49,14 +49,13 @@ System *System::sharedInstance() noexcept {
  */
 System::System() {
 	// allocate the CPU time profiler
-	this->cpuLoad = new CPULoadProfiler();
-
 #if 1
 	this->cpuLoadOutputTimer = xTimerCreate("CPULoad", pdMS_TO_TICKS(10000),
 										   pdTRUE, nullptr,
 										   SystemCPUOutputTimerCallback);
 	xTimerStart(this->cpuLoadOutputTimer, 0);
 #endif
+
 	// initialize the filesystem too
 	Filesystem::init();
 }
@@ -67,8 +66,5 @@ System::System() {
 System::~System() {
 	// kill the timer
 	xTimerStop(this->cpuLoadOutputTimer, 0);
-
-	// delete profiler for CPU load
-	delete this->cpuLoad;
 }
 
