@@ -70,6 +70,12 @@ namespace ledout {
 
 			uint32_t calculatePacketCRC(void *, size_t);
 
+			void setUpCRC(void);
+			void cleanUpCRC(void);
+			uint32_t doHWCRC(void *, size_t);
+
+			uint32_t doSWCRC(void *, size_t);
+
 		// byte order conversion helpers
 		private:
 			void convertPacketByteOrder(void *, bool);

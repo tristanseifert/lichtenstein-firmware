@@ -15,9 +15,17 @@
 
 #include <sys/System.h>
 
+#include <crc32/Crc32.h>
+
 #include <LichtensteinApp.h>
 
 #include <cstring>
+
+
+
+// set to use hardware CRC calculation
+#define USE_HARDWARE_CRC					0
+
 
 
 namespace ledout {
@@ -55,6 +63,11 @@ void _DoMulticastAnnouncement(TimerHandle_t timer) {
 LichtensteinHandler::LichtensteinHandler() {
 	BaseType_t ok;
 	int err;
+
+	// set up the CRC peripheral
+#if USE_HARDWARE_CRC
+	this->setUpCRC();
+#endif
 
 	// create the queue
 	this->messageQueue = xQueueCreate(LichtensteinHandler::MessageQueueSize,
@@ -118,6 +131,11 @@ LichtensteinHandler::~LichtensteinHandler() {
 	if(this->sock != nullptr) {
 		this->tearDownSocket();
 	}
+
+	// clean up CRC
+#if USE_HARDWARE_CRC
+	this->cleanUpCRC();
+#endif
 }
 
 
@@ -206,7 +224,7 @@ int LichtensteinHandler::postMessageToTask(message_type_t msg, int timeout) {
  * @param msg Message
  */
 void LichtensteinHandler::taskHandleRequest(message_type_t msg) {
-	LOG(S_DEBUG, "Received message: %u", msg);
+//	LOG(S_DEBUG, "Received message: %u", msg);
 
 	// handle the message
 	switch(msg) {
@@ -331,12 +349,16 @@ uint32_t LichtensteinHandler::calculatePacketCRC(void *_packet, size_t length) {
 	size_t payloadLen = __builtin_bswap32(header->payloadLength);
 
 	// get CRC offset into the packet
-	size_t offset = offsetof(lichtenstein_node_announcement_t, header.opcode);
+	size_t offset = offsetof(lichtenstein_header_t, opcode);
 	void *ptr = ((uint8_t *) _packet) + offset;
 	size_t len = sizeof(lichtenstein_header_t) - offset + payloadLen;
 
-	// TODO: implement
-	return 0;
+	// calculate CRC
+#if USE_HARDWARE_CRC
+	return this->doHWCRC(ptr, len);
+#else
+	return this->doSWCRC(ptr, len);
+#endif
 }
 
 /**
@@ -467,6 +489,70 @@ void LichtensteinHandler::tearDownSocket(void) {
 	// finally, delete it
 	delete this->sock;
 	this->sock = nullptr;
+}
+
+
+
+/**
+ * Sets up the CRC peripheral.
+ */
+void LichtensteinHandler::setUpCRC(void) {
+	// enable the clock for the CRC peripheral and reset it
+	RCC_AHBPeriphClockCmd(RCC_AHBPeriph_CRC, ENABLE);
+
+	CRC_ResetDR();
+}
+
+/**
+ * Resets and disables the CRC peripheral.
+ */
+void LichtensteinHandler::cleanUpCRC(void) {
+	// reset the CRC then disable its clock
+	CRC_ResetDR();
+
+	RCC_AHBPeriphClockCmd(RCC_AHBPeriph_CRC, DISABLE);
+}
+
+/**
+ * Using the hardware CRC peripheral, calculates a CRC over the given input
+ * data.
+ *
+ * @note The hardware CRC polynomial is 0x4C11DB7.
+ *
+ * @param data Address of data
+ * @param length Number of bytes to compute the CRC for
+ * @return CRC
+ */
+uint32_t LichtensteinHandler::doHWCRC(void *data, size_t length) {
+	// reset the CRC
+	CRC_ResetDR();
+
+	// data length MUST be a multiple of 4 bytes
+	if((length & 3) != 0) {
+		LOG(S_ERROR, "Packet length must be a multiple of 4!");
+		return 0;
+	}
+
+	// continuously write to the CRC unit
+	uint32_t *ptr = (uint32_t *) data;
+
+	for(size_t i = 0; i < length; i += 4) {
+		CRC->DR = *ptr++;
+	}
+
+	// return the CRC
+	return CRC->DR;
+}
+
+/**
+ * Calculates a CRC over the given input data using a software method.
+ *
+ * @param data Address of data
+ * @param length Number of bytes to compute the CRC for
+ * @return CRC
+ */
+uint32_t LichtensteinHandler::doSWCRC(void *data, size_t length) {
+	return crc32_fast(data, length);
 }
 
 } /* namespace ledout */
