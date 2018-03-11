@@ -86,6 +86,10 @@ namespace ip {
 				return this->hostname;
 			}
 
+			const stack_mac_addr_t getMacAddress(void) const {
+				return this->mac;
+			}
+
 		private:
 			// network handler (used to rx/tx packets)
 			Network *net = nullptr;

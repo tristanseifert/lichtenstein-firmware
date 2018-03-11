@@ -58,6 +58,10 @@ class Network {
 	public:
 		static ip::UDPSocket *getUDPSocket(void) noexcept;
 
+		const ip::Stack *getStack(void) const {
+			return this->stack;
+		}
+
 	// network message task
 	private:
 		friend void _NetTaskTrampoline(void *ctx);

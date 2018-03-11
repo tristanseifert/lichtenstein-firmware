@@ -49,9 +49,11 @@ Stack::Stack(Network *n) : net(n) {
 
 	// XXX: testing
 //	this->ip = __builtin_bswap32(0xac100d96);
-//	this->ip = __builtin_bswap32(0xc0a800c8); // 192.168.0.200
-//	this->netMask = __builtin_bswap32(0xFFFFFF00);
+	this->ip = __builtin_bswap32(0xc0a800c8); // 192.168.0.200
+	this->netMask = __builtin_bswap32(0xFFFFFF00);
 //	this->routerIp = __builtin_bswap32(0xac100d01);
+
+	this->useDHCP = false;
 
 	// initialize default hostname
 	this->setHostname("lichtenstein");
