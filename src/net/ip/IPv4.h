@@ -87,7 +87,7 @@ namespace ip {
 
 		private:
 			// size of the multicast filter
-			static const size_t multicastFilterSize = 16;
+			static const size_t multicastFilterSize = 8;
 			// multicast addresses we will receive on
 			stack_ipv4_addr_t multicastFilter[multicastFilterSize];
 			// reference count for each address

@@ -449,13 +449,14 @@ void Network::taskEntry(void) {
 					// log info about the link state
 					bool linkUp = (msg.index == 1) ? true : false;
 					LOG(S_INFO, "Link state: %u", linkUp);
-					LOG(S_DEBUG, "Speed: %u Mbps, %s duplex", speed,
-							(duplex ? "full" : "half"));
 
-					// update MAC
+					if(linkUp) {
+						LOG(S_DEBUG, "Speed: %u Mbps, %s duplex", speed,
+								(duplex ? "full" : "half"));
+					}
+
+					// update MAC and stack with new link state
 					this->mac->linkStateChanged(linkUp, duplex, speed);
-
-					// update the stack
 					this->stack->linkStateChanged(linkUp);
 
 					break;

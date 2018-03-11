@@ -140,7 +140,7 @@ void ICMP::processUnicastFrame(void *_packet) {
 				msg.data.echoRequest.additionalDataLength = 0;
 			}
 
-			if(this->postMessageToTask(&msg, 0) == false) {
+			if(this->postMessageToTask(&msg, 0) != 0) {
 				LOG(S_ERROR, "Can't respond to echo request");
 
 				// deallocate the buffer we allocated earlier
@@ -188,17 +188,17 @@ void ICMP::taskEntry(void) {
  * @return true if the message was submitted, false otherwise (queue full
  * 		   and timeout expired or some other error)
  */
-bool ICMP::postMessageToTask(void *msg, int timeout) {
+int ICMP::postMessageToTask(void *msg, int timeout) {
 	BaseType_t ok;
 
 	ok = xQueueSendToBack(this->messageQueue, msg, timeout);
 
 	if(ok != pdPASS) {
 		LOG(S_ERROR, "Couldn't send message to task: %u", ok);
-		return false;
+		return 1;
 	}
 
-	return true;
+	return 0;
 }
 
 

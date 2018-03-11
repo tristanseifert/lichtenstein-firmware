@@ -45,6 +45,9 @@ namespace ip {
 				this->convertPacketByteOrder(_packet);
 			}
 
+			void insertIGMPChecksum(void *, ssize_t length = -1);
+			bool verifyIGMPChecksum(void *, ssize_t length = -1);
+
 		private:
 			uint64_t receivedPackets = 0;
 
@@ -57,7 +60,7 @@ namespace ip {
 			void taskSendMembershipReport(void *);
 			void taskSendLeaveGroup(void *);
 
-			bool postMessageToTask(void *, int timeout = portMAX_DELAY);
+			int postMessageToTask(void *, int timeout = portMAX_DELAY);
 
 		private:
 			// size of the ICMP task's stack, in words

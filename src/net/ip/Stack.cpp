@@ -436,7 +436,7 @@ bool Stack::resolveIPToMAC(stack_ipv4_addr_t addr, stack_mac_addr_t *result, int
 		result->bytes[4] = (lowBits & 0x0000FF00) >> 8;
 		result->bytes[5] = (lowBits & 0x000000FF);
 
-		return false;
+		return true;
 	}
 	// otherwise, perform an ARP lookup
 	else {

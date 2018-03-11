@@ -46,7 +46,8 @@ IGMP::IGMP(Stack *_stack, IPv4 *_ipv4) : stack(_stack), ipv4(_ipv4) {
 	BaseType_t ok;
 
 	// create the queue
-	this->messageQueue = xQueueCreate(IGMP::messageQueueSize, sizeof(igmp_task_message_t));
+	this->messageQueue = xQueueCreate(IGMP::messageQueueSize,
+			sizeof(igmp_task_message_t));
 
 	if(this->messageQueue == nullptr) {
 		LOG(S_FATAL, "Couldn't create message queue!");
@@ -59,14 +60,6 @@ IGMP::IGMP(Stack *_stack, IPv4 *_ipv4) : stack(_stack), ipv4(_ipv4) {
 	if(ok != pdTRUE) {
 		LOG(S_FATAL, "Couldn't create task!");
 	}
-
-	// register for the all hosts (224.0.0.1) address
-	err = this->ipv4->addMulticastAddress(kIPv4AddressAllHosts);
-
-	if(err != 0) {
-		LOG(S_FATAL, "Couldn't subscribe to all hosts group");
-	}
-
 }
 
 /**
@@ -104,6 +97,16 @@ void IGMP::processMulticastFrame(void *_packet) {
 	// parse packet
 	igmp_packet_ipv4_t *igmp = (igmp_packet_ipv4_t *) rx->payload;
 	this->packetNetworkToHost(igmp);
+
+	// verify checksum
+	size_t payloadLength = this->ipv4->getRxBufferPayloadLength(rx);
+
+	if(this->verifyIGMPChecksum(igmp, payloadLength) == false) {
+		LOG(S_WARN, "Received IGMP packet with invalid checksum");
+
+		this->ipv4->releaseRxBuffer(rx);
+		return;
+	}
 
 	// handle IGMPv1 timeouts
 	if(igmp->timeout == 0) {
@@ -150,9 +153,18 @@ void IGMP::processMulticastFrame(void *_packet) {
  * Processing task entry point
  */
 void IGMP::taskEntry(void) {
-	BaseType_t ok;
+	BaseType_t ok; int err;
 	igmp_task_message_t msg;
 
+	// register for the all hosts (224.0.0.1) address
+	err = this->ipv4->addMulticastAddress(kIPv4AddressAllHosts);
+	err = this->ipv4->addMulticastAddress(__builtin_bswap32(0xef2a0045));
+
+	if(err != 0) {
+		LOG(S_FATAL, "Couldn't subscribe to all hosts group");
+	}
+
+	// process messages
 	while(1) {
 		// attempt to receive a message
 		ok = xQueueReceive(this->messageQueue, &msg, portMAX_DELAY);
@@ -161,6 +173,7 @@ void IGMP::taskEntry(void) {
 			LOG(S_ERROR, "Error reading from queue");
 			continue;
 		}
+
 
 		// process message
 		switch(msg.type) {
@@ -217,8 +230,9 @@ void IGMP::taskSendMembershipReport(void *_msg) {
 	// set the destination address
 	this->ipv4->setIPv4Destination(tx, msg->address);
 
-	// byteswap the buffer and send it
+	// calculate checksum and byteswap
 	this->packetHostToNetwork(igmp);
+	this->insertIGMPChecksum(igmp);
 
 	if(this->ipv4->transmitIPv4TxBuffer(tx) == false) {
 		LOG(S_ERROR, "Couldn't send membership report");
@@ -263,8 +277,9 @@ void IGMP::taskSendLeaveGroup(void *_msg) {
 	// set the destination address
 	this->ipv4->setIPv4Destination(tx, kIPv4AddressAllRouters);
 
-	// byteswap the buffer and send it
+	// calculate checksum and byteswap
 	this->packetHostToNetwork(igmp);
+	this->insertIGMPChecksum(igmp);
 
 	if(this->ipv4->transmitIPv4TxBuffer(tx) == false) {
 		LOG(S_ERROR, "Couldn't send leave request");
@@ -288,6 +303,11 @@ void IGMP::joinedGroup(stack_ipv4_addr_t address) {
 		Stack::ipToString(address, ipStr, 16);
 
 		LOG(S_ERROR, "%s is not a multicast address", ipStr);
+		return;
+	}
+
+	// ignore all hosts address
+	if(address == kIPv4AddressAllHosts) {
 		return;
 	}
 
@@ -323,6 +343,11 @@ void IGMP::leftGroup(stack_ipv4_addr_t address) {
 		return;
 	}
 
+	// ignore all hosts address
+	if(address == kIPv4AddressAllHosts) {
+		return;
+	}
+
 	// post message
 	igmp_task_message_t msg;
 	memset(&msg, 0, sizeof(igmp_task_message_t));
@@ -343,20 +368,73 @@ void IGMP::leftGroup(stack_ipv4_addr_t address) {
  * @return true if the message was submitted, false otherwise (queue full
  * 		   and timeout expired or some other error)
  */
-bool IGMP::postMessageToTask(void *msg, int timeout) {
+int IGMP::postMessageToTask(void *msg, int timeout) {
 	BaseType_t ok;
 
 	ok = xQueueSendToBack(this->messageQueue, msg, timeout);
 
 	if(ok != pdPASS) {
 		LOG(S_ERROR, "Couldn't send message to task: %u", ok);
-		return false;
+		return 1;
 	}
 
-	return true;
+	return 0;
 }
 
 
+
+/**
+ * Calculates the checksum for the IGMP packet and
+ *
+ * @param _igmp IGMP packet
+ * @param length Number of bytes to calculate the checksum over
+ */
+void IGMP::insertIGMPChecksum(void *_igmp, ssize_t length) {
+	igmp_packet_ipv4_t *igmp = (igmp_packet_ipv4_t *) _igmp;
+
+	// if length is -1, replace it with the size of the packet
+	if(length == -1) {
+		length = sizeof(igmp_packet_ipv4_t);
+	}
+	// length must be even
+	if((length & 1) != 0) {
+		length++;
+	}
+
+	// make sure the checksum field is zero
+	igmp->checksum = 0;
+
+	// calculate the one's complement (add all values together)
+	uint32_t checksum = 0;
+	uint16_t *read = (uint16_t *) _igmp;
+
+	for(ssize_t i = 0; i < length; i += 2) {
+		// add to the checksum
+		checksum += (uint32_t) *read++;
+
+		// if checksum wraps beyond 0xffff, subtract
+		if (checksum > 0xFFFF) {
+			checksum -= 0xFFFF;
+		}
+	}
+
+	// write checksum into the packet
+	// idk why it's incorrect when byteswapped lol
+//	igmp->checksum = __builtin_bswap16((uint16_t) ~checksum);
+	igmp->checksum = ((uint16_t) ~checksum);
+}
+
+/**
+ * Validates the checksum of a received IGMP packet.
+ *
+ * @param _igmp IGMP packet
+ * @param length Number of bytes to calculate the checksum over
+ * @return true if the checksum is valid, false otherwise.
+ */
+bool IGMP::verifyIGMPChecksum(void *_igmp, ssize_t length) {
+	// TODO: unimplemented
+	return true;
+}
 
 /**
  * Converts the byte order of multi-byte fields in an IGMP packet.

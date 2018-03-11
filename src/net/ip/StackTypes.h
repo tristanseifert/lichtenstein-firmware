@@ -69,22 +69,22 @@ typedef uint32_t stack_ipv4_addr_t;
 /**
  * All zero's (this network broadcast) address.
  */
-static const stack_ipv4_addr_t kIPv4AddressZero = 0x00000000;
+static const stack_ipv4_addr_t kIPv4AddressZero = __builtin_bswap32(0x00000000);
 
 /**
  * Local broadcast address
  */
-static const stack_ipv4_addr_t kIPv4AddressBroadcast = 0xFFFFFFFF;
+static const stack_ipv4_addr_t kIPv4AddressBroadcast = __builtin_bswap32(0xFFFFFFFF);
 
 /**
  * Multicast address for all hosts
  */
-static const stack_ipv4_addr_t kIPv4AddressAllHosts = 0xE0000001;
+static const stack_ipv4_addr_t kIPv4AddressAllHosts = __builtin_bswap32(0xE0000001);
 
 /**
  * Multicast address for all routers
  */
-static const stack_ipv4_addr_t kIPv4AddressAllRouters = 0xE0000002;
+static const stack_ipv4_addr_t kIPv4AddressAllRouters = __builtin_bswap32(0xE0000002);
 
 
 

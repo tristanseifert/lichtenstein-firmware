@@ -50,7 +50,7 @@ namespace ip {
 
 			void taskEntry(void);
 
-			bool postMessageToTask(void *msg, int timeout = portMAX_DELAY);
+			int postMessageToTask(void *msg, int timeout = portMAX_DELAY);
 
 			void taskSendEchoReplyTo(void *msg);
 
