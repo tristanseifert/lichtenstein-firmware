@@ -110,12 +110,16 @@ Output::Output() {
 
 	// once hardware setup is complete, start the task
 	this->task = new OutputTask();
+
+	// create the protocol handler
+	this->handler = new LichtensteinHandler();
 }
 
 /**
  * Deletes the task, which will stop it.
  */
 Output::~Output() {
+	delete this->handler;
 	delete this->task;
 }
 

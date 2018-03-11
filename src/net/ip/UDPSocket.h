@@ -87,6 +87,9 @@ namespace ip {
 				void *buffer;
 				void *txPacket;
 			} txBufferMap[txMapSize];
+
+		private:
+			unsigned int multicastRefCount = 0;
 	};
 
 } /* namespace ip */

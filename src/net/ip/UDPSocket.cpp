@@ -45,6 +45,9 @@ UDPSocket::UDPSocket(UDP *_udp) : udp(_udp) {
 	// clear the rx/tx b uffer maps
 	memset(this->rxBufferMap, 0, sizeof(this->rxBufferMap));
 	memset(this->txBufferMap, 0, sizeof(this->txBufferMap));
+
+	// get protocol pointers
+	this->ipv4 = udp->ipv4;
 }
 
 /**
@@ -412,6 +415,26 @@ int UDPSocket::bind(unsigned int port) {
  * Handles setting a socket option.
  */
 int UDPSocket::setSockOpt(socket_protocol_t protocol, socket_option_t option, void *value, size_t length) {
+	// if joining a multicast group, enable multicast reception
+	if(protocol == Socket::kSocketProtocolIPv4) {
+		if(option == Socket::kSockOptJoinMulticast) {
+			// enable multicast reception and increment refcount
+			this->udp->setMulticastReceptionState(this, true);
+
+			this->multicastRefCount++;
+		} else if(option == Socket::kSockOptLeaveMulticast) {
+			// decrement ref counter; if it's zero, disable multicast
+			this->multicastRefCount--;
+
+			if(this->multicastRefCount == 0) {
+				// disable multicast reception
+				this->udp->setMulticastReceptionState(this, false);
+			}
+		}
+
+		// don't return so the IP protocol can handle it too
+	}
+
 	// handle UDP packets here
 	if(protocol == Socket::kSocketProtocolUDP) {
 		// run the appropriate option

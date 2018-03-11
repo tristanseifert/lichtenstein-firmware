@@ -75,59 +75,84 @@ void UDP::handleReceivedFrame(void *_rx, int type) {
 	for(size_t i = 0; i < UDP::listenPortsEntries; i++) {
 		udp_listen_t *listen = &this->listenPorts[i];
 
+#if 0
+		LOG(S_DEBUG, "%u: %s port %u to sock 0x%08x", i, listen->valid ? "valid" : "invalid", listen->port, listen->sock);
+#endif
+
 		// is the port equal to the port we received the packet on?
 		if(listen->valid && listen->port == header->destPort) {
-			// if it's unicast, forward it
-			if(type == UNICAST) {
-				// send it to the socket
-				listen->sock->receivedFrame(rx, UDPSocket::UNICAST);
+			switch(type) {
+				// directly forward unicast
+				case UNICAST: {
+					// send it to the socket
+					listen->sock->receivedFrame(rx, UDPSocket::UNICAST);
 
-				// increment counter
-				this->handledRxUnicast++;
+					// increment counter
+					this->handledRxUnicast++;
 
-				goto handled;
-			}
-			// if multicast is selected, ensure that the socket receives it
-			else if(type == MULTICAST && listen->acceptsMulticast) {
-				// send it to the socket
-				listen->sock->receivedFrame(rx, UDPSocket::MULTICAST);
+					goto handled;
+				}
 
-				// increment counter
-				this->handledRxMulticast++;
+				// forward multicast if requested
+				case MULTICAST: {
+					// if multicast is accepted, send it
+					if(listen->acceptsMulticast) {
+						// send it to the socket
+						listen->sock->receivedFrame(rx, UDPSocket::MULTICAST);
 
-				goto handled;
-			}
-			// if broadcast is selected, ensure that the socket receives it
-			else if(type == BROADCAST && listen->acceptsBroadcast) {
-				// send it to the socket
-				listen->sock->receivedFrame(rx, UDPSocket::BROADCAST);
+						// increment counter
+						this->handledRxMulticast++;
 
-				// increment counter
-				this->handledRxBroadcast++;
+						goto handled;
+					}
 
-				goto handled;
-			}
-			// we should never get down here
-			else {
-				LOG(S_ERROR, "Invalid type %u for 0x%x", type, listen);
+					// otherwise, we get down here
+					break;
+				}
 
-				goto discard;
+				// forward broadcast if requested
+				case BROADCAST: {
+					// check that the socket accepts broadcast
+					if(listen->acceptsBroadcast) {
+						// send it to the socket
+						listen->sock->receivedFrame(rx, UDPSocket::BROADCAST);
+
+						// increment counter
+						this->handledRxBroadcast++;
+
+						goto handled;
+					}
+
+					// otherwise, we get down here
+					break;
+				}
+
+				// default case: should NEVER get here
+				default: {
+					LOG(S_ERROR, "Invalid type %u for 0x%x", type, listen);
+
+					goto discard;
+				}
 			}
 		}
-
-		// only get here if no socket to handle this packet was found
-		goto discard;
 	}
 
 discard: ;
 	// if we get down here, discard the packet since nobody is handling it
-	this->ipv4->releaseRxBuffer(rx);
-
 	this->unhandledRxPackets++;
 
 #if LOG_HANDLING
-	LOG(S_DEBUG, "Unhandled RX packets: %u", this->unhandledRxPackets);
+	char ipStrSrc[16], ipStrDest[16];
+
+	Stack::ipToString(rx->ipv4Header->source, ipStrSrc, 16);
+	Stack::ipToString(rx->ipv4Header->dest, ipStrDest, 16);
+
+	LOG(S_DEBUG, "Unhandled packet: %s:%u -> %s:%u (%u)", ipStrSrc,
+			header->sourcePort, ipStrDest, header->destPort,
+			this->unhandledRxPackets);
 #endif
+
+	this->ipv4->releaseRxBuffer(rx);
 
 	// clean-up
 handled: ;

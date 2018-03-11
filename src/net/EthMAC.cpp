@@ -1487,8 +1487,10 @@ BaseType_t EthMAC::receiveIRQ(void) {
 				}
 			}
 		}
-
 	}
+
+	// reset the descriptor address
+	ETH->DMARDLAR = (uint32_t) this->rxDescriptors;
 
 	// return the woke status
 	return wokeSticky;

@@ -13,6 +13,7 @@
 #include "semphr.h"
 
 #include "OutputTask.h"
+#include "LichtensteinHandler.h"
 
 // declare ISR linkeage
 extern "C" void DMA1_Channel5_IRQHandler(void);
@@ -20,6 +21,7 @@ extern "C" void DMA2_Channel2_IRQHandler(void);
 
 class Output {
 	friend class ledout::OutputTask;
+	friend class ledout::LichtensteinHandler;
 
 	friend void DMA1_Channel5_IRQHandler(void);
 	friend void DMA2_Channel2_IRQHandler(void);
@@ -50,7 +52,9 @@ class Output {
 		virtual ~Output();
 
 	private:
-		ledout::OutputTask *task;
+		ledout::OutputTask *task = nullptr;
+
+		ledout::LichtensteinHandler *handler = nullptr;
 };
 
 #endif /* LEDOUT_OUTPUT_H_ */

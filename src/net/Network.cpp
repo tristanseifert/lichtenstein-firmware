@@ -466,14 +466,14 @@ void Network::taskEntry(void) {
 				case kNetworkMessageRxPacketLost:
 					if(msg.index == 1) {
 						LOG(S_WARN, "Ethernet reception stopped");
+						this->mac->dbgCheckDMAStatus();
 					} else {
 						LOG(S_WARN, "Exhausted RX buffers");
 					}
 
-					this->mac->dbgCheckDMAStatus();
-
 					// if reception stopped, reset all buffers
 					this->mac->resetReceiveDescriptors();
+
 					break;
 
 				// unknown interrupt

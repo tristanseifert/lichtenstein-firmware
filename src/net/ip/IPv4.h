@@ -91,7 +91,7 @@ namespace ip {
 			// multicast addresses we will receive on
 			stack_ipv4_addr_t multicastFilter[multicastFilterSize];
 			// reference count for each address
-			size_t multicastFilterRefCount[multicastFilterSize];
+			unsigned int multicastFilterRefCount[multicastFilterSize];
 
 		private:
 			IGMP *igmp = nullptr;
