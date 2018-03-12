@@ -136,9 +136,13 @@ stack_ipv4_addr_t Stack::getIPAddress(void) const {
 /**
  * Sets the hostname. This isn't really used outside of what the DHCP client
  * will send when it requests a lease.
+ *
+ * @param name New hostname
+ *
+ * TODO: figure out why this sometimes overwrites the stack itself
  */
 void Stack::setHostname(const char *name) {
-	// free old hostname
+	// free old hostname buffer
 	if(this->hostname) {
 		vPortFree(this->hostname);
 	}
@@ -147,7 +151,15 @@ void Stack::setHostname(const char *name) {
 	size_t len = strlen(name) + 1;
 
 	this->hostname = (char *) pvPortMalloc(len);
+
+	if(this->hostname == nullptr) {
+		LOG(S_ERROR, "Couldn't allocate hostname buffer");
+		return;
+	}
+
 	memset(this->hostname, 0, len);
+
+//	LOG(S_DEBUG, "Setting hostname to '%s'; this = 0x%08x, ptr = 0x%08x", name, this, this->hostname);
 
 	// copy the hostname
 	strncpy(this->hostname, name, len);

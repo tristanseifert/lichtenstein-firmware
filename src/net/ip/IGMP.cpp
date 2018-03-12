@@ -25,7 +25,7 @@
 // log transmitted IGMP packets
 #define LOG_TRANSMITTED_PACKETS				1
 // log received IGMP packets
-#define LOG_RECEIVED_PACKETS					1
+#define LOG_RECEIVED_PACKETS					0
 
 
 
@@ -68,6 +68,7 @@ IGMP::IGMP(Stack *_stack, IPv4 *_ipv4) : stack(_stack), ipv4(_ipv4) {
 IGMP::~IGMP() {
 	// unregister for the all hosts (224.0.0.1) address
 	this->ipv4->removeMulticastAddress(kIPv4AddressAllHosts);
+	this->ipv4->removeMulticastAddress(IGMP::IGMPv3Address);
 
 	// delete task and queue
 	if(this->task) {
@@ -113,16 +114,16 @@ void IGMP::processMulticastFrame(void *_packet) {
 		igmp->timeout = 100;
 	}
 
-	// logging
-#if LOG_RECEIVED_PACKETS
-	char ipStr[16];
-	Stack::ipToString(igmp->address, ipStr, 16);
-
-	LOG(S_DEBUG, "Received IGMP message 0x%02x for %s", igmp->type, ipStr);
-#endif
-
-	// was it a membership query?
+	// was it an IGMPv2 membership query?
 	if(igmp->type == kIGMPMessageMembershipQuery) {
+		// logging
+	#if LOG_RECEIVED_PACKETS
+		char ipStr[16];
+		Stack::ipToString(igmp->address, ipStr, 16);
+
+		LOG(S_DEBUG, "Received IGMP message 0x%02x for %s", igmp->type, ipStr);
+	#endif
+
 		// if the address is zero, it's a general query
 		if(igmp->address == kIPv4AddressZero) {
 			// TODO: respond to general queries
@@ -141,10 +142,67 @@ void IGMP::processMulticastFrame(void *_packet) {
 				LOG(S_ERROR, "Couldn't queue membership reply");
 			}
 		}
+	} else if(igmp->type == kIGMPv3MessageMembershipQuery) {
+		this->processIGMPv3Packet(rx->payload);
 	}
 
 	// release packet
 	this->ipv4->releaseRxBuffer(rx);
+}
+
+/**
+ * Processes an IGMPv3 packet.
+ */
+void IGMP::processIGMPv3Packet(void *_packet) {
+	igmpv3_packet_ipv4_t *v3 = (igmpv3_packet_ipv4_t *) _packet;
+
+	// read through each record
+	uint8_t *ptr = (uint8_t *) &v3->records;
+	igmpv3_packet_ipv4_record_t *record;
+
+	for(size_t i = 0; i < v3->numRecords; i++) {
+		record = (igmpv3_packet_ipv4_record_t *) ptr;
+
+		// logging
+#if LOG_RECEIVED_PACKETS
+		char ipStr[16];
+
+		Stack::ipToString(record->addr, ipStr, 16);
+		LOG(S_DEBUG, "Address %s: Type 0x%02x, %u aux data", ipStr,
+				record->type, record->auxDataLen * 4);
+#endif
+
+		// did another system leave a group?
+		if(record->type == kIGMPv3TypeChangeToInclude) {
+#if LOG_RECEIVED_PACKETS
+			LOG(S_DEBUG, "Someone left %s", ipStr);
+#endif
+		}
+		// did another system join a group?
+		else if(record->type == kIGMPv3TypeChangeToExclude) {
+#if LOG_RECEIVED_PACKETS
+			LOG(S_DEBUG, "Someone joined %s", ipStr);
+#endif
+
+			// send a membership query for this group
+			igmp_task_message_t msg;
+			memset(&msg, 0, sizeof(igmp_task_message_t));
+
+			msg.type = kIGMPSendMembershipForGroup;
+			msg.address = record->addr;
+
+			int err = this->postMessageToTask(&msg, 0);
+
+			if(err != 0) {
+				LOG(S_ERROR, "Couldn't queue membership reply");
+			}
+		}
+
+		// skip length of the packet + number of sources and aux data
+		ptr += sizeof(igmpv3_packet_ipv4_record_t);
+		ptr += sizeof(stack_ipv4_addr_t) * record->numSources;
+		ptr += record->auxDataLen;
+	}
 }
 
 
@@ -161,6 +219,13 @@ void IGMP::taskEntry(void) {
 
 	if(err != 0) {
 		LOG(S_FATAL, "Couldn't subscribe to all hosts group");
+	}
+
+	// register for the IGMPv3 query group
+	err = this->ipv4->addMulticastAddress(IGMP::IGMPv3Address);
+
+	if(err != 0) {
+		LOG(S_FATAL, "Couldn't subscribe to IGMPv3 query group");
 	}
 
 	// process messages
@@ -183,13 +248,13 @@ void IGMP::taskEntry(void) {
 		switch(msg.type) {
 			// respond to a membership query for the given group
 			case kIGMPSendMembershipForGroup: {
-				this->taskSendMembershipReport(&msg);
+				this->taskSendMembershipReport3(&msg);
 				break;
 			}
 
 			// send a "leave group" message
 			case kIGMPSendLeaveGroup: {
-				this->taskSendLeaveGroup(&msg);
+				this->taskSendLeaveGroup3(&msg);
 				break;
 			}
 		}
@@ -197,11 +262,11 @@ void IGMP::taskEntry(void) {
 }
 
 /**
- * Prepares and sends a membership report message.
+ * Prepares and sends an IGMPv2 membership report message.
  *
  * @param _msg IGMP task message struct
  */
-void IGMP::taskSendMembershipReport(void *_msg) {
+void IGMP::taskSendMembershipReport2(void *_msg) {
 	igmp_task_message_t *msg = (igmp_task_message_t *) _msg;
 
 	// attempt to get a TX buffer
@@ -245,11 +310,62 @@ void IGMP::taskSendMembershipReport(void *_msg) {
 }
 
 /**
- * Prepares and sends a "leave group" message.
+ * Prepares and sends an IGMPv3 membership report message.
  *
  * @param _msg IGMP task message struct
  */
-void IGMP::taskSendLeaveGroup(void *_msg) {
+void IGMP::taskSendMembershipReport3(void *_msg) {
+	igmp_task_message_t *msg = (igmp_task_message_t *) _msg;
+
+	// attempt to get a TX buffer
+	const size_t responseSize = sizeof(igmpv3_packet_ipv4_t) + sizeof(igmpv3_packet_ipv4_record_t);
+
+	void *_tx = this->ipv4->getIPv4TxBuffer(responseSize, kIPv4ProtocolIGMP);
+	stack_ipv4_tx_packet_t *tx = (stack_ipv4_tx_packet_t *) _tx;
+
+	// exit if we can't get a buffer
+	if(tx == nullptr) {
+		LOG(S_ERROR, "Couldn't get transmit buffer");
+		return;
+	}
+
+	// logging
+#if LOG_TRANSMITTED_PACKETS
+	char destIpStr[16];
+	Stack::ipToString(msg->address, destIpStr, 16);
+
+	LOG_ISR(S_DEBUG, "Sending membership report for %s", destIpStr);
+#endif
+
+	// populate the IGMP packet
+	igmpv3_packet_ipv4_t *igmp = (igmpv3_packet_ipv4_t *) tx->payload;
+	memset(igmp, 0, responseSize);
+
+	igmp->type = kIGMPMessageMembershipReport;
+	igmp->numRecords = 1;
+
+	igmp->records[0].addr = msg->address;
+	igmp->records[0].type = kIGMPv3TypeChangeToExclude;
+
+	// set the destination address
+	this->ipv4->setIPv4Destination(tx, IGMP::IGMPv3Address);
+	this->ipv4->setIPv4TTL(tx, 1);
+
+	// calculate checksum and byteswap
+	this->packetHostToNetwork(igmp);
+	this->insertIGMPChecksum(igmp);
+
+	if(this->ipv4->transmitIPv4TxBuffer(tx) == false) {
+		LOG(S_ERROR, "Couldn't send membership report");
+	}
+}
+
+/**
+ * Prepares and sends an IGMPv2 "leave group" message.
+ *
+ * @param _msg IGMP task message struct
+ */
+void IGMP::taskSendLeaveGroup2(void *_msg) {
 	igmp_task_message_t *msg = (igmp_task_message_t *) _msg;
 
 	// attempt to get a TX buffer
@@ -288,6 +404,57 @@ void IGMP::taskSendLeaveGroup(void *_msg) {
 
 	if(this->ipv4->transmitIPv4TxBuffer(tx) == false) {
 		LOG(S_ERROR, "Couldn't send leave request");
+	}
+}
+
+/**
+ * Prepares and sends an IGMPv3 "leave group" message.
+ *
+ * @param _msg IGMP task message struct
+ */
+void IGMP::taskSendLeaveGroup3(void *_msg) {
+	igmp_task_message_t *msg = (igmp_task_message_t *) _msg;
+
+	// attempt to get a TX buffer
+	const size_t responseSize = sizeof(igmpv3_packet_ipv4_t) + sizeof(igmpv3_packet_ipv4_record_t);
+
+	void *_tx = this->ipv4->getIPv4TxBuffer(responseSize, kIPv4ProtocolIGMP);
+	stack_ipv4_tx_packet_t *tx = (stack_ipv4_tx_packet_t *) _tx;
+
+	// exit if we can't get a buffer
+	if(tx == nullptr) {
+		LOG(S_ERROR, "Couldn't get transmit buffer");
+		return;
+	}
+
+	// logging
+#if LOG_TRANSMITTED_PACKETS
+	char destIpStr[16];
+	Stack::ipToString(msg->address, destIpStr, 16);
+
+	LOG_ISR(S_DEBUG, "Sending leave report for %s", destIpStr);
+#endif
+
+	// populate the IGMP packet
+	igmpv3_packet_ipv4_t *igmp = (igmpv3_packet_ipv4_t *) tx->payload;
+	memset(igmp, 0, responseSize);
+
+	igmp->type = kIGMPMessageMembershipReport;
+	igmp->numRecords = 1;
+
+	igmp->records[0].addr = msg->address;
+	igmp->records[0].type = kIGMPv3TypeChangeToInclude;
+
+	// set the destination address
+	this->ipv4->setIPv4Destination(tx, IGMP::IGMPv3Address);
+	this->ipv4->setIPv4TTL(tx, 1);
+
+	// calculate checksum and byteswap
+	this->packetHostToNetwork(igmp);
+	this->insertIGMPChecksum(igmp);
+
+	if(this->ipv4->transmitIPv4TxBuffer(tx) == false) {
+		LOG(S_ERROR, "Couldn't send leave report");
 	}
 }
 
@@ -450,10 +617,42 @@ bool IGMP::verifyIGMPChecksum(void *_igmp, ssize_t length) {
 /**
  * Converts the byte order of multi-byte fields in an IGMP packet.
  */
-void IGMP::convertPacketByteOrder(void *_igmp) {
+void IGMP::convertPacketByteOrder(void *_igmp, bool hostToNetwork) {
 	igmp_packet_ipv4_t *igmp = (igmp_packet_ipv4_t *) _igmp;
 
 	igmp->checksum = __builtin_bswap16(igmp->checksum);
+
+	// if it's IGMPv3, also byteswap the numSources field
+	if(igmp->type == kIGMPv3MessageMembershipQuery) {
+		igmpv3_packet_ipv4_t *v3 = (igmpv3_packet_ipv4_t *) igmp;
+
+		// get the number of records in the correct byte ordering
+		uint32_t hostNumRecords = 0;
+
+		if(hostToNetwork) {
+			hostNumRecords = v3->numRecords;
+			v3->numRecords = __builtin_bswap16(v3->numRecords);
+		} else {
+			v3->numRecords = __builtin_bswap16(v3->numRecords);
+			hostNumRecords = v3->numRecords;
+		}
+
+		// byteswap each source
+		uint8_t *ptr = (uint8_t *) &v3->records;
+		igmpv3_packet_ipv4_record_t *record;
+
+		for(size_t i = 0; i < hostNumRecords; i++) {
+			record = (igmpv3_packet_ipv4_record_t *) ptr;
+
+			// byteswap the number of source addresses
+			record->numSources = __builtin_bswap16(record->numSources);
+
+			// skip length of the packet + number of sources and aux data
+			ptr += sizeof(igmpv3_packet_ipv4_record_t);
+			ptr += sizeof(stack_ipv4_addr_t) * record->numSources;
+			ptr += (record->auxDataLen * 4);
+		}
+	}
 }
 
 } /* namespace ip */

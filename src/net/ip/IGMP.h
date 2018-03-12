@@ -34,15 +34,18 @@ namespace ip {
 		public:
 			void processMulticastFrame(void *);
 
+		private:
+			void processIGMPv3Packet(void *);
+
 		// byte order conversion helpers
 		private:
-			void convertPacketByteOrder(void *);
+			void convertPacketByteOrder(void *, bool);
 
 			void packetNetworkToHost(void *_packet) {
-				this->convertPacketByteOrder(_packet);
+				this->convertPacketByteOrder(_packet, false);
 			}
 			void packetHostToNetwork(void *_packet) {
-				this->convertPacketByteOrder(_packet);
+				this->convertPacketByteOrder(_packet, true);
 			}
 
 			void insertIGMPChecksum(void *, ssize_t length = -1);
@@ -57,8 +60,10 @@ namespace ip {
 
 			void taskEntry(void);
 
-			void taskSendMembershipReport(void *);
-			void taskSendLeaveGroup(void *);
+			void taskSendMembershipReport2(void *);
+			void taskSendMembershipReport3(void *);
+			void taskSendLeaveGroup2(void *);
+			void taskSendLeaveGroup3(void *);
 
 			int postMessageToTask(void *, int timeout = portMAX_DELAY);
 
@@ -80,6 +85,10 @@ namespace ip {
 		public:
 			void joinedGroup(stack_ipv4_addr_t address);
 			void leftGroup(stack_ipv4_addr_t address);
+
+		private:
+			// IGMPv3 address
+			static const stack_ipv4_addr_t IGMPv3Address = __builtin_bswap32(0xe0000016);
 
 		private:
 			Stack *stack = nullptr;

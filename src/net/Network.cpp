@@ -594,7 +594,7 @@ void *Network::getTxBuffer(size_t size, int timeout) {
  */
 void Network::queueTxBuffer(void *addr) {
 	// handle address of zero
-	if(addr == nullptr) {
+	if(addr == nullptr || this == nullptr) {
 		LOG(S_ERROR, "addr cannot be nullptr");
 		DebugBreakpoint();
 	}
@@ -606,6 +606,7 @@ void Network::queueTxBuffer(void *addr) {
 		// compare addresses
 		if(this->txBuffers[i] == addr) {
 			index = i;
+			break;
 		}
 	}
 

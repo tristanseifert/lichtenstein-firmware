@@ -937,6 +937,7 @@ void DHCPClient::fillRequestOptions(void *_dhcp, size_t hostnameLength) {
 				*opt++ = (uint8_t) hostnameLength;
 
 				// copy the hostname
+				// TODO: sometimes this overwrites the stack itself (wtf)
 				memcpy(opt, this->stack->getHostname(), hostnameLength);
 
 				// terminate the options list

@@ -17,7 +17,8 @@
 enum {
 	kIGMPMessageMembershipQuery				= 0x11,
 	kIGMPMessageMembershipReport				= 0x16,
-	kIGMPMessageLeaveGroup					= 0x17
+	kIGMPMessageLeaveGroup					= 0x17,
+	kIGMPv3MessageMembershipQuery			= 0x22,
 };
 
 /**
@@ -36,17 +37,64 @@ typedef struct __attribute__((__packed__)) {
 	stack_ipv4_addr_t address;
 } igmp_packet_ipv4_t;
 
+/**
+ * Values for the `type` field of the igmpv3_packet_ipv4_record_t struct.
+ */
+typedef enum {
+	kIGMPv3TypeModeIsInclude				= 0x01,
+	kIGMPv3TypeModeIsExclude				= 0x02,
+
+	kIGMPv3TypeChangeToInclude			= 0x03,
+	kIGMPv3TypeChangeToExclude			= 0x04,
+} igmpv3_packet_ipv4_record_type_t;
+
+/**
+ * IGMPv3 packet
+ */
+typedef struct __attribute__((__packed__)) {
+	// type of record
+	uint8_t type;
+	// length of auxiliary data
+	uint8_t auxDataLen;
+
+	// number of attached sources
+	uint16_t numSources;
+	// address
+	stack_ipv4_addr_t addr;
+
+	// source addresses
+	stack_ipv4_addr_t sources[];
+} igmpv3_packet_ipv4_record_t;
+
+typedef struct __attribute__((__packed__)) {
+	// request type
+	uint8_t type;
+	// timeout, in 1/10th of a second
+	uint8_t timeout;
+
+	// checksum value
+	uint16_t checksum;
+
+	// flags
+	uint16_t reserved;
+	// number of sources to follow
+	uint16_t numRecords;
+
+	// source addresses
+	igmpv3_packet_ipv4_record_t records[];
+} igmpv3_packet_ipv4_t;
+
 
 typedef enum {
 	/**
 	 * Sends a membership report for the given address, indicating that we
 	 * are a member of that group.
 	 */
-	kIGMPSendMembershipForGroup				= 1,
+	kIGMPSendMembershipForGroup				= 1,//!< kIGMPSendMembershipForGroup
 	/**
 	 * Sends a leave request for the given address.
 	 */
-	kIGMPSendLeaveGroup,
+	kIGMPSendLeaveGroup,               //!< kIGMPSendLeaveGroup
 } igmp_task_message_type_t;
 
 /**
