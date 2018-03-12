@@ -31,7 +31,8 @@
 // produce logging output for received frames
 #define LOG_RECEIVE								0
 
-
+// Use a static IP (only in debugging)
+#define TEST_STATIC								0
 
 
 namespace ip {
@@ -48,12 +49,17 @@ Stack::Stack(Network *n) : net(n) {
 	this->dhcp = new DHCPClient(this);
 
 	// XXX: testing
-//	this->ip = __builtin_bswap32(0xac100d96);
+#ifdef DEBUG
+#if TEST_STATIC
 	this->ip = __builtin_bswap32(0xc0a800c8); // 192.168.0.200
 	this->netMask = __builtin_bswap32(0xFFFFFF00);
 //	this->routerIp = __builtin_bswap32(0xac100d01);
 
 	this->useDHCP = false;
+#else
+	this->useDHCP = true;
+#endif // TEST_STATIC
+#endif // DEBUG
 
 	// initialize default hostname
 	this->setHostname("lichtenstein");

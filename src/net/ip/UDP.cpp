@@ -344,7 +344,7 @@ int UDP::discardTxBuffer(__attribute__((unused)) UDPSocket *sock,
 /**
  * Queues a previously created transmit buffer for transmission.
  */
-int UDP::sendTxBuffer(UDPSocket *sock, stack_ipv4_addr_t address, unsigned int port, udp_tx_packet_t *buffer) {
+int UDP::sendTxBuffer(UDPSocket *sock, stack_ipv4_addr_t address, unsigned int port, udp_tx_packet_t *buffer, bool requireValidIP) {
 	// set the destination address in the IP packet
 	this->ipv4->setIPv4Destination(buffer->ipTx, address);
 
@@ -364,7 +364,7 @@ int UDP::sendTxBuffer(UDPSocket *sock, stack_ipv4_addr_t address, unsigned int p
 #endif
 
 	// transmit the buffer
-	if(this->ipv4->transmitIPv4TxBuffer(buffer->ipTx) == false) {
+	if(this->ipv4->transmitIPv4TxBuffer(buffer->ipTx, requireValidIP) == false) {
 		LOG(S_ERROR, "Couldn't send buffer");
 		return UDP::ErrTxFailure;
 	}

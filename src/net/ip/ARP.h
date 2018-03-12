@@ -81,7 +81,7 @@ namespace ip {
 			// size of the ARP task's stack, in words
 			static const size_t TaskStackSize = 150;
 			// priority of the ARP task
-			static const int TaskPriority = 2;
+			static const int TaskPriority = 3;
 
 			// how many messages may be pending on the message queue at a time
 			static const size_t messageQueueSize = 4;

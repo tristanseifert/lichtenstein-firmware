@@ -68,7 +68,7 @@ namespace ip {
 			// size of the ICMP task's stack, in words
 			static const size_t TaskStackSize = 150;
 			// priority of the ICMP task
-			static const int TaskPriority = 3;
+			static const int TaskPriority = 2;
 
 			// how many messages may be pending on the message queue at a time
 			static const size_t messageQueueSize = 4;

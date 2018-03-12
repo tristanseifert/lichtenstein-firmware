@@ -416,12 +416,23 @@ void *IPv4::getIPv4TxBuffer(size_t payloadLength, uint8_t protocol, int timeout)
  * @note This call will block if the IPv4 address is not present in the ARP
  * cache, so it should not be called from the receive pipeline.
  */
-bool IPv4::transmitIPv4TxBuffer(void *_buffer) {
+bool IPv4::transmitIPv4TxBuffer(void *_buffer, bool requireValidIP) {
 	bool success;
 	stack_ipv4_tx_packet_t *packet = (stack_ipv4_tx_packet_t *) _buffer;
 
 	// parameter checking
 	if(_buffer == nullptr) {
+		return false;
+	}
+
+	// return if the IP config is invalid
+	if((!this->stack->ipAddressValid()) && requireValidIP) {
+//		LOG(S_ERROR, "Discarded IP packet because of invalid IP config");
+
+		// discard the packet and deallocate buffer
+		this->stack->discardTXPacket(packet->stackBuffer);
+		vPortFree(_buffer);
+
 		return false;
 	}
 
@@ -507,6 +518,18 @@ void IPv4::setIPv4Source(void *_buffer, stack_ipv4_addr_t addr) {
 
 	packet->ipv4Header->source = addr;
 	packet->sourceAddrSet = true;
+}
+
+/**
+ * Sets the TTL of the IP packet.
+ *
+ * @param _buffer IP packet
+ * @param ttl New TTL value
+ */
+void IPv4::setIPv4TTL(void *_buffer, uint8_t ttl) {
+	stack_ipv4_tx_packet_t *packet = (stack_ipv4_tx_packet_t *) _buffer;
+
+	packet->ipv4Header->ttl = ttl;
 }
 
 

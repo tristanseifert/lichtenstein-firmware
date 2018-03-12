@@ -165,6 +165,11 @@ void IGMP::taskEntry(void) {
 
 	// process messages
 	while(1) {
+		// ensure that the IP config is valid
+		while(this->stack->ipAddressValid() == false) {
+			vTaskDelay(5);
+		}
+
 		// attempt to receive a message
 		ok = xQueueReceive(this->messageQueue, &msg, portMAX_DELAY);
 
@@ -228,6 +233,7 @@ void IGMP::taskSendMembershipReport(void *_msg) {
 
 	// set the destination address
 	this->ipv4->setIPv4Destination(tx, msg->address);
+	this->ipv4->setIPv4TTL(tx, 1);
 
 	// calculate checksum and byteswap
 	this->packetHostToNetwork(igmp);
@@ -317,10 +323,13 @@ void IGMP::joinedGroup(stack_ipv4_addr_t address) {
 	msg.type = kIGMPSendMembershipForGroup;
 	msg.address = address;
 
-	err = this->postMessageToTask(&msg, 0);
+	// send it multiple times
+	for(size_t i = 0; i < IGMP::PacketResends; i++) {
+		err = this->postMessageToTask(&msg, 0);
 
-	if(err != 0) {
-		LOG(S_ERROR, "Couldn't queue group joined message");
+		if(err != 0) {
+			LOG(S_ERROR, "Couldn't queue group joined message: %u", err);
+		}
 	}
 }
 
@@ -354,10 +363,13 @@ void IGMP::leftGroup(stack_ipv4_addr_t address) {
 	msg.type = kIGMPSendLeaveGroup;
 	msg.address = address;
 
-	err = this->postMessageToTask(&msg, 0);
+	// send it multiple times
+	for(size_t i = 0; i < IGMP::PacketResends; i++) {
+		err = this->postMessageToTask(&msg, 0);
 
-	if(err != 0) {
-		LOG(S_ERROR, "Couldn't queue group left message");
+		if(err != 0) {
+			LOG(S_ERROR, "Couldn't queue group joined message: %u", err);
+		}
 	}
 }
 

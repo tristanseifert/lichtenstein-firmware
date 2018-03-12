@@ -56,11 +56,13 @@ namespace ip {
 		// API for IP protocols to get TX buffers
 		public:
 			void *getIPv4TxBuffer(size_t payloadLength, uint8_t protocol, int timeout = -1);
-			bool transmitIPv4TxBuffer(void *buffer);
+			bool transmitIPv4TxBuffer(void *buffer, bool requireValidIP = true);
 			bool discardTxBuffer(void *buffer);
 
 			void setIPv4Destination(void *buffer, stack_ipv4_addr_t addr);
 			void setIPv4Source(void *buffer, stack_ipv4_addr_t addr);
+
+			void setIPv4TTL(void *buffer, uint8_t ttl);
 
 		private:
 			// ID of the current packet

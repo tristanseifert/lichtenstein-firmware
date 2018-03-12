@@ -70,7 +70,7 @@ namespace ledout {
 			// size of the stack
 			static const size_t TaskStackSize = 200;
 			// output task priority
-			static const size_t TaskPriority = 2;
+			static const size_t TaskPriority = 3;
 			// how many messages can be pending at a time in the message queue
 			static const size_t MessageQueueDepth = 4;
 

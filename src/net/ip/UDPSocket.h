@@ -48,7 +48,7 @@ namespace ip {
 
 
 		public:
-			virtual int setSockOpt(socket_protocol_t protocol, socket_option_t option, void *value, size_t length);
+			virtual int setSockOpt(socket_protocol_t protocol, socket_option_t option, const void *value, size_t length);
 			virtual int getSockOpt(socket_protocol_t protocol, socket_option_t option, void *out, size_t length);
 
 		// API called by UDP class

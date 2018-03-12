@@ -117,7 +117,11 @@ namespace ip {
  * Jumps into the task entry point for the DHCP client.
  */
 void  _DHCPClientTaskTrampoline(void *ctx) {
-	(static_cast<DHCPClient *>(ctx))->taskEntry();
+	int ret = (static_cast<DHCPClient *>(ctx))->taskEntry();
+
+	if(ret != 0) {
+		LOG(S_FATAL, "DHCP task exited: %d", ret);
+	}
 }
 
 /**
@@ -256,10 +260,17 @@ int DHCPClient::taskEntry(void) {
 		return -1;
 	}
 
+	// enable sending without an IP config
+	const bool yes = true;
+	err = this->sock->setSockOpt(Socket::kSocketProtocolIPv4,
+			Socket::kSockOptIPConfigRequired, &yes, sizeof(bool));
+
+	if(err != 0) {
+		LOG(S_ERROR, "Couldn't enable IP-less transmit: %d", err);
+		return -1;
+	}
 
 	// receive broadcast
-	bool yes = true;
-
 	err = this->sock->setSockOpt(Socket::kSocketProtocolUDP,
 			Socket::kSockOptAcceptBroadcast, &yes, sizeof(bool));
 

@@ -31,6 +31,10 @@ class Board {
 		void toggleLED(board_led_t led);
 		void setLED(board_led_t led, bool set);
 
+		const board_config_t *getConfig(void) const {
+			return &this->config;
+		}
+
 	private:
 		void getGPIOForLED(board_led_t, GPIO_TypeDef **, uint16_t *);
 

@@ -278,6 +278,9 @@ int UDPSocket::sendTo(void *buffer, stack_ipv4_addr_t addr, uint16_t port, unsig
 			tx = (udp_tx_packet_t *) this->txBufferMap[i].txPacket;
 
 
+			// set the TTL on the IP packet
+			this->ipv4->setIPv4TTL(tx->ipTx, this->ipv4TTL);
+
 			/*// write the port number into the UDP header and set destination
 			this->udp->ipv4->setIPv4Destination(tx->ipTx, addr);
 
@@ -285,7 +288,7 @@ int UDPSocket::sendTo(void *buffer, stack_ipv4_addr_t addr, uint16_t port, unsig
 			udpHeader->destPort = port;*/
 
 			// then, transmit it
-			err = this->udp->sendTxBuffer(this, addr, port, tx);
+			err = this->udp->sendTxBuffer(this, addr, port, tx, !this->sendWithInvalidIP);
 
 			// then empty the fields
 			this->txBufferMap[i].buffer = nullptr;
@@ -414,7 +417,7 @@ int UDPSocket::bind(unsigned int port) {
 /**
  * Handles setting a socket option.
  */
-int UDPSocket::setSockOpt(socket_protocol_t protocol, socket_option_t option, void *value, size_t length) {
+int UDPSocket::setSockOpt(socket_protocol_t protocol, socket_option_t option, const void *value, size_t length) {
 	// if joining a multicast group, enable multicast reception
 	if(protocol == Socket::kSocketProtocolIPv4) {
 		if(option == Socket::kSockOptJoinMulticast) {

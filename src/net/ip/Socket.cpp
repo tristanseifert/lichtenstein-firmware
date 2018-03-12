@@ -18,7 +18,8 @@ namespace ip {
  * Initializes the socket and any structures we need.
  */
 Socket::Socket() {
-
+	// initialize default TTL
+	this->ipv4TTL = IPv4::defaultTTL;
 }
 
 /**
@@ -33,7 +34,7 @@ Socket::~Socket() {
  * Handles setting a socket option. This handles lower-level options (such as
  * multicast groups) that are common to all higher-level protocols.
  */
-int Socket::setSockOpt(socket_protocol_t protocol, socket_option_t option, void *value, size_t length) {
+int Socket::setSockOpt(socket_protocol_t protocol, socket_option_t option, const void *value, size_t length) {
 	int err;
 
 	// is the option IPv4?
@@ -73,6 +74,42 @@ int Socket::setSockOpt(socket_protocol_t protocol, socket_option_t option, void 
 				} else {
 					return Socket::ErrSuccess;
 				}
+			}
+
+			// change default TTP
+			case kSockOptIPTTL: {
+				// ensure value length is correct
+				if(length != sizeof(int)) {
+					return Socket::ErrInvalidOptionLength;
+				}
+
+				int ttl = *((int *) value);
+
+				// limit parameter to (0, 255]
+				if(ttl <= 0) {
+					ttl = IPv4::defaultTTL;
+				} else if(ttl > 0xFF) {
+					ttl = IPv4::defaultTTL;
+				}
+
+				// set the TTL value
+				this->ipv4TTL = (uint8_t) ttl;
+
+				// we're just changing a flag
+				return Socket::ErrSuccess;
+			}
+			// require an IP config
+			case kSockOptIPConfigRequired: {
+				// ensure value length is correct
+				if(length != sizeof(bool)) {
+					return Socket::ErrInvalidOptionLength;
+				}
+
+				// copy the value
+				this->sendWithInvalidIP = *((bool *) value);
+
+				// we're just changing a flag
+				return Socket::ErrSuccess;
 			}
 
 			// unhandled option

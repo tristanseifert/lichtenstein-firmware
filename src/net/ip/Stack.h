@@ -41,6 +41,9 @@ namespace ip {
 			void linkStateChanged(bool linkUp);
 
 			stack_ipv4_addr_t getIPAddress(void) const;
+			bool ipAddressValid(void) const {
+				return this->isIPv4ConfigValid;
+			}
 
 		// sockets
 		public:

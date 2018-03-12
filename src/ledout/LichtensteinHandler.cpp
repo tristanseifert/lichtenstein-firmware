@@ -16,6 +16,8 @@
 #include "Output.h"
 #include "OutputTask.h"
 
+#include <board/Board.h>
+
 #include <net/Network.h>
 #include <net/ip/UDPSocket.h>
 #include <net/ip/Stack.h>
@@ -468,8 +470,13 @@ void LichtensteinHandler::taskSendMulticastDiscovery(void) {
 	lichtenstein_node_announcement_t *packet;
 	packet = (lichtenstein_node_announcement_t *) buffer;
 
-	packet->swVersion = 0x0000100;
-	packet->hwVersion = 0x0000100;
+	packet->swVersion = 0x00001000;
+
+	uint32_t hwVersion = 0;
+	hwVersion |= Board::sharedInstance()->getConfig()->hwModel << 24;
+	hwVersion |= Board::sharedInstance()->getConfig()->hwVersion << 16;
+	hwVersion |= Board::sharedInstance()->getConfig()->hwRevision << 8;
+	packet->hwVersion = hwVersion;
 
 	memcpy(packet->macAddr, stack->getMacAddress().bytes, 6);
 
@@ -501,13 +508,30 @@ void LichtensteinHandler::taskSendMulticastDiscovery(void) {
 	packet->header.checksum = this->calculatePacketCRC(&packet->header, bytes);
 	packet->header.checksum = __builtin_bswap32(packet->header.checksum);
 
-	// transmit the packet
+	// set TTL to 1
+	int ttl = 1;
+	err = this->sock->setSockOpt(ip::Socket::kSocketProtocolIPv4, ip::Socket::kSockOptIPTTL, &ttl, sizeof(ttl));
+	if(err != ip::Socket::ErrSuccess) {
+		LOG(S_ERROR, "Couldn't set TTL: %d", err);
+		this->sock->discardTx(buffer);
+		return;
+	}
+
+	// send the packet
 	err = this->sock->sendTo(buffer, LichtensteinHandler::MulticastGroup,
 			LichtensteinHandler::Port);
 
 	if(err != ip::Socket::ErrSuccess) {
 		LOG(S_ERROR, "Couldn't send node discovery: %d", err);
+		return;
+	}
 
+	// restore TTL
+	ttl = -1;
+	err = this->sock->setSockOpt(ip::Socket::kSocketProtocolIPv4, ip::Socket::kSockOptIPTTL, &ttl, sizeof(ttl));
+	if(err != ip::Socket::ErrSuccess) {
+		LOG(S_ERROR, "Couldn't set TTL: %d", err);
+		this->sock->discardTx(buffer);
 		return;
 	}
 }
@@ -556,7 +580,7 @@ uint32_t LichtensteinHandler::calculatePacketCRC(lichtenstein_header_t *header, 
 	// get CRC offset into the packet
 	size_t offset = offsetof(lichtenstein_header_t, opcode);
 	void *ptr = ((uint8_t *) header) + offset;
-	size_t len = sizeof(lichtenstein_header_t) - offset + payloadLen;
+	size_t len = (length - offset);
 
 	// calculate CRC
 #if USE_HARDWARE_CRC

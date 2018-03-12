@@ -89,7 +89,7 @@ namespace ip {
 
 				udp_tx_packet_t *getTxBuffer(UDPSocket *sock, size_t payloadLength, int timeout);
 				int discardTxBuffer(UDPSocket *sock, udp_tx_packet_t *buffer);
-				int sendTxBuffer(UDPSocket *sock, stack_ipv4_addr_t address, unsigned int port, udp_tx_packet_t *buffer);
+				int sendTxBuffer(UDPSocket *sock, stack_ipv4_addr_t address, unsigned int port, udp_tx_packet_t *buffer, bool requireValidIP = true);
 
 			// counters
 			private:

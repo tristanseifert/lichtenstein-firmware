@@ -36,7 +36,7 @@ namespace ledout {
 			// size of the task's stack, in words
 			static const size_t TaskStackSize = 200;
 			// priority of the task
-			static const int TaskPriority = 2;
+			static const int TaskPriority = 1;
 			// how many messages may be pending on the message queue at a time
 			static const size_t MessageQueueSize = 4;
 
@@ -44,7 +44,7 @@ namespace ledout {
 			QueueHandle_t messageQueue = nullptr;
 
 			// how frequently we send discovery packets
-			static const size_t DiscoveryPeriod = 3000;
+			static const size_t DiscoveryPeriod = 1000;
 			TimerHandle_t discoveryTimer = nullptr;
 
 		private:

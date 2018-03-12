@@ -16,7 +16,10 @@
 #include <cstring>
 
 // assert PE0 when writing a packet
-#define ASSERT_PE0_FOR_TX					1
+#define ASSERT_PE0_FOR_TX					0
+
+// log hash filter
+#define LOG_HASH_FILTER						0
 
 namespace net {
 
@@ -611,7 +614,9 @@ int EthMAC::setMulticastAddr(uint8_t *address, bool enable) {
     ETH->MACHTLR = hashTable[0];
     ETH->MACHTHR = hashTable[1];
 
+#if LOG_HASH_FILTER
     LOG(S_DEBUG, "MACHTLR = %08x, MACHTHR = %08x", ETH->MACHTLR, ETH->MACHTHR);
+#endif
 
     return 0;
 }
@@ -956,6 +961,9 @@ void EthMAC::relinkRxDescriptors(void) {
 	} else {
 		// disable reception to write to the DMA descriptor address
 		// TODO: mask IRQs here for the "DMA receive stopped"
+		uint32_t oldDMAIER = ETH->DMAIER;
+		ETH->DMAIER = 0;
+
 //		ETH->DMAOMR &= ~(ETH_DMAOMR_SR);
 
 		// set the address, start reception and re-read descriptors
@@ -966,6 +974,7 @@ void EthMAC::relinkRxDescriptors(void) {
 //		LOG_ISR(S_DEBUG, "Set RX last received: 0x%x", this->rxLastReceived);
 
 		ETH->DMAOMR |= ETH_DMAOMR_SR;
+		ETH->DMAIER = oldDMAIER;
 
 		ETH->DMARPDR = ETH_DMARPDR_RPD;
 	}

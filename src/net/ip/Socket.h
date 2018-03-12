@@ -56,6 +56,22 @@ namespace ip {
 				 * Type: stack_ipv4_addr_t
 				 */
 				kSockOptLeaveMulticast,
+
+				/**
+				 * Sets the IP TTL value to use for all outgoing packets. Use
+				 * -1 to restore default TTL.
+				 *
+				 * Type: int
+				 */
+				kSockOptIPTTL,
+
+				/**
+				 * Enables transmission without a valid IP configuration, for
+				 * services like DHCP.
+				 *
+				 * Type: bool
+				 */
+				kSockOptIPConfigRequired,
 			} socket_option_t;
 
 			/**
@@ -242,7 +258,7 @@ namespace ip {
 			 *
 			 * Returns 0 if the option was set, an error code otherwise.
 			 */
-			virtual int setSockOpt(socket_protocol_t protocol, socket_option_t option, void *value, size_t length) = 0;
+			virtual int setSockOpt(socket_protocol_t protocol, socket_option_t option, const void *value, size_t length) = 0;
 
 			/**
 			 * Gets a particular socket option.
@@ -293,6 +309,17 @@ namespace ip {
 			 * was previously made.
 			 */
 			unsigned int localPort = 0;
+
+			/**
+			 * TTL to use, if it's been changed by a socket option.
+			 */
+			uint8_t ipv4TTL;
+
+			/**
+			 * Should the socket be able to send if the IP configuration is
+			 * invalid?
+			 */
+			bool sendWithInvalidIP = false;
 	};
 } /* namespace ip */
 
