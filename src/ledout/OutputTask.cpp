@@ -84,6 +84,7 @@ OutputTask::OutputTask() {
 		LOG(S_ERROR, "Couldn't create task");
 	}
 
+
 	// allocate buffers
 	memset(&this->outputBuffer, 0, sizeof(this->outputBuffer));
 
@@ -95,7 +96,16 @@ OutputTask::OutputTask() {
 		this->ledsPerBuffer[i] = 150;
 	}
 
-	this->allocBuffers();
+	for(int i = 0; i < numOutputChannels; i++) {
+		// allocate buffers
+		this->outputBuffer[i] = (uint8_t *) pvPortMalloc(outputBufSz);
+
+		LOG(S_DEBUG, "allocated buffer %d: output = 0x%x, size %u",
+					 i, this->outputBuffer[i], outputBufSz);
+
+		// clear the buffer
+		memset(this->outputBuffer[i], 0, outputBufSz);
+	}
 }
 
 /**
@@ -116,22 +126,6 @@ OutputTask::~OutputTask() {
 }
 
 /**
- * Allocates the various buffers needed to output pixel data.
- */
-void OutputTask::allocBuffers(void) {
-	for(int i = 0; i < numOutputChannels; i++) {
-		// allocate buffers
-		this->outputBuffer[i] = (uint8_t *) pvPortMalloc(outputBufSz);
-
-		LOG(S_DEBUG, "allocated buffer %d: output = 0x%x, size %u",
-					 i, this->outputBuffer[i], outputBufSz);
-
-		// clear them
-		memset(this->outputBuffer[i], 0, outputBufSz);
-	}
-}
-
-/**
  * Entry point for the task.
  */
 void OutputTask::taskEntry(void) noexcept {
@@ -142,6 +136,14 @@ void OutputTask::taskEntry(void) noexcept {
 	this->fpsTimer = xTimerCreate("OutFPS", pdMS_TO_TICKS(1000), pdTRUE, this,
 								 OutputFPSTimerCallback);
 	xTimerStart(this->fpsTimer, portMAX_DELAY);
+
+	// clear the buffer (fill with all zeroes) and output it
+	for(int i = 0; i < numOutputChannels; i++) {
+		this->clearBuffer(i, (outputBufSz - 1));
+
+		Output::sharedInstance()->outputData(i, this->outputBuffer[i],
+				this->outputBufferBytesWritten[i]);
+	}
 
 	// process messages in here
 	while(1) {
@@ -306,7 +308,39 @@ void OutputTask::convertRGBW(int index, int pixels, void *bufferPtr) {
 
 	// get how many bytes we wrote
 	this->outputBufferBytesWritten[index] = (buf - bufStart);
+}
 
+/**
+ * This does basically the same as the function above, except that it simply
+ * fills the buffer with all 0 symbols.
+ */
+void OutputTask::clearBuffer(size_t index, size_t numBytes) {
+	uint8_t *buf = (this->outputBuffer[index]); // first byte is zero
+
+	// keep track of how many bytes we write
+	uint8_t *bufStart = buf;
+	this->outputBufferBytesWritten[index] = 2; // for start and ending 0 byte
+
+	// first byte is zero
+	*buf++ = 0x00;
+
+	// get the bit pattern for a zero byte
+	const uint32_t patternData = bitPatternLut[0x00];
+	const uint8_t *pattern = reinterpret_cast<const uint8_t *>(&patternData);
+
+	// output data for each LED
+	for(size_t i = 0; i < (numBytes - 2); i += 3) {
+		// copy the bytes in REVERSE order because ARM is little endian
+		*buf++ = pattern[2];
+		*buf++ = pattern[1];
+		*buf++ = pattern[0];
+	}
+
+	// write zero byte at the end
+	*buf++ = 0x00;
+
+	// get how many bytes we wrote
+	this->outputBufferBytesWritten[index] = (buf - bufStart);
 }
 
 } /* namespace ledout */

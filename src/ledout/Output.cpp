@@ -110,7 +110,6 @@ Output::Output() {
 
 	// once hardware setup is complete, start the task
 	this->task = new OutputTask();
-
 	// create the protocol handler
 	this->handler = new LichtensteinHandler();
 }
@@ -264,6 +263,10 @@ void Output::initOutputDMA(void) {
 	for(int i = 0; i < Output::NumOutputChannels; i++) {
 		handle = xSemaphoreCreateBinary();
 		this->dmaSemaphores[i] = handle;
+
+		if(handle == nullptr) {
+			LOG(S_FATAL, "Couldn't allocate semaphore");
+		}
 
 		// give the semaphore so the DMA routine can take it
 		xSemaphoreGive(handle);

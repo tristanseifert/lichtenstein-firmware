@@ -37,7 +37,7 @@ namespace ledout {
 		private:
 			friend void _OutputTaskTrampoline(void *);
 
-			void allocBuffers(void);
+			void clearBuffer(size_t, size_t);
 
 			void taskEntry(void) noexcept;
 

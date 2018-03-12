@@ -196,7 +196,12 @@ dumpExceptionStack (ExceptionStackFrame* frame,
     }
 
   LOG_ISR(S_ERROR, "LR/EXC_RETURN= %08X", lr);
-  LOG_ISR(S_ERROR, "Task name: %s, ticks %u", pxCurrentTCB->pcTaskName, xTaskGetTickCountFromISR());
+
+  if(pxCurrentTCB != NULL && pxCurrentTCB->pcTaskName != NULL) {
+	  LOG_ISR(S_ERROR, "Task name: %s, ticks %u", pxCurrentTCB->pcTaskName, xTaskGetTickCountFromISR());
+  } else {
+	  LOG_ISR(S_ERROR, "Task name: ???, ticks %u", xTaskGetTickCountFromISR());
+  }
 }
 
 #endif // defined(__ARM_ARCH_7M__) || defined(__ARM_ARCH_7EM__)
