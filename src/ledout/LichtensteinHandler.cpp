@@ -5,9 +5,16 @@
  *      Author: tristan
  */
 #define LOG_MODULE "LICT"
+#define LICHTENSTEIN_PRIVATE
+#define OUTPUTTASK_PRIVATE
+
+#include "lichtenstein_proto.h"
 
 #include "LichtensteinHandler.h"
-#include "lichtenstein_proto.h"
+
+#include "OutputTaskPrivate.h"
+#include "Output.h"
+#include "OutputTask.h"
 
 #include <net/Network.h>
 #include <net/ip/UDPSocket.h>
@@ -29,6 +36,26 @@
 
 
 namespace ledout {
+
+/**
+ * Called when a buffer has been completed. This will discard the received
+ * buffer with the socket.
+ *
+ * @param h Pointer to the LichtensteinHandler instance
+ * @param rxBuffer Receive buffer
+ */
+void _ConversionCompleteCallback(void *h, void *rxBuffer) {
+	LichtensteinHandler *handler = static_cast<LichtensteinHandler *>(h);
+
+	lichtenstein_framebuffer_data_t *data;
+	data = (lichtenstein_framebuffer_data_t *) rxBuffer;
+
+	// acknowledge the message
+	handler->ackPacket(&data->header);
+
+	// discard RX buffer
+	handler->sock->discardRx(rxBuffer);
+}
 
 /**
  * C trampoline to go into the FreeRTOS task.
@@ -74,7 +101,7 @@ LichtensteinHandler::LichtensteinHandler() {
 			sizeof(message_type_t));
 
 	if(this->messageQueue == nullptr) {
-		LOG(S_FATAL, "Couldn't create message queue!");
+		LOG(S_FATAL, "Couldn't create message queue");
 	}
 
 	// now, create the task
@@ -83,7 +110,7 @@ LichtensteinHandler::LichtensteinHandler() {
 			LichtensteinHandler::TaskPriority, &this->task);
 
 	if(ok != pdTRUE) {
-		LOG(S_FATAL, "Couldn't create task!");
+		LOG(S_FATAL, "Couldn't create task");
 	}
 
 	// set up a timer to periodically produce multicast announcements
@@ -150,6 +177,9 @@ void LichtensteinHandler::taskEntry() {
 
 	BaseType_t ok;
 	message_type_t msg;
+	lichtenstein_header_t *hdr;
+
+	bool releasePacket = true;
 
 	// set up the socket
 	this->setUpSocket();
@@ -174,14 +204,52 @@ void LichtensteinHandler::taskEntry() {
 
 
 
-		// process packet
+		// byteswap all fields in the packet
+		hdr = (lichtenstein_header_t *) buffer;
+		err = this->packetNetworkToHost(buffer, bytesRead);
+
 		LOG(S_DEBUG, "Received %u bytes", bytesRead);
+
+		if(err != 0) {
+			LOG(S_INFO, "Couldn't byteswap packet (%u bytes)", bytesRead);
+			goto doneProcessing;
+		}
+
+		// handle packet based on the opcode
+		switch(hdr->opcode) {
+			// framebuffer data received
+			case kOpcodeFramebufferData: {
+				lichtenstein_framebuffer_data_t *fb;
+				fb = (lichtenstein_framebuffer_data_t *) buffer;
+
+				releasePacket = this->taskHandleFBData(fb);
+				break;
+			}
+			// output a particular channel
+			case kOpcodeSyncOutput: {
+				lichtenstein_sync_output_t *sync;
+				sync = (lichtenstein_sync_output_t *) buffer;
+
+				releasePacket = this->taskHandleSyncOut(sync);
+				break;
+			}
+
+			// unknown opcode (should never happen)
+			default: {
+				LOG(S_ERROR, "Invalid opcode: %u", hdr->opcode);
+
+				// release packet
+				releasePacket = true;
+				break;
+			}
+		}
 
 
 		// clean up and release packet
 doneProcessing: ;
-		this->sock->discardRx(buffer);
-
+		if(releasePacket) {
+			this->sock->discardRx(buffer);
+		}
 
 
 readMessages: ;
@@ -195,6 +263,140 @@ readMessages: ;
 
 	// we shouldn't get down here but clean up anyways
 	this->tearDownSocket();
+}
+
+/**
+ * Handles a framebuffer data packet.
+ *
+ * @param packet Pointer to packet
+ *
+ * @return true if the packet should be released, false otherwise.
+ */
+bool LichtensteinHandler::taskHandleFBData(lichtenstein_framebuffer_data_t *packet) {
+	int err;
+
+	// prepare the message
+	output_message_t msg;
+	memset(&msg, 0, sizeof(output_message_t));
+
+	// fill in type, channel
+	msg.type = kOutputMessageConvert;
+	msg.channel = packet->destChannel;
+
+	// set pointer to data and buffer length
+	msg.payload.convert.buffer = &packet->data;
+
+	msg.payload.convert.isRGBW = (packet->dataFormat == kDataFormatRGBW);
+	msg.payload.convert.numLEDs = packet->dataElements;
+
+	// set callback
+	msg.callback = _ConversionCompleteCallback;
+	msg.cbContext1 = this;
+	msg.cbContext2 = packet;
+
+	// send it
+	err = Output::sharedInstance()->task->sendMessage(&msg);
+
+	if(err != 0) {
+		LOG(S_ERROR, "Couldn't convert buffer");
+
+		return true;
+	}
+
+	// if we get here, the send was successful so keep the buffer around
+	return false;
+}
+
+/**
+ * Handles a received "sync output" packet
+ *
+ * @param  packet Pointer to packet
+ *
+ * @return true if the packet should be released, false otherwise.
+ */
+bool LichtensteinHandler::taskHandleSyncOut(lichtenstein_sync_output_t *packet) {
+	int err;
+
+	// prepare the message
+	output_message_t msg;
+	memset(&msg, 0, sizeof(output_message_t));
+
+	// fill in type, channel
+	msg.type = kOutputMessageSend;
+	msg.channel = packet->channel;
+
+	// send it
+	err = Output::sharedInstance()->task->sendMessage(&msg);
+
+	if(err != 0) {
+		LOG(S_ERROR, "Couldn't output buffer");
+	}
+
+	// always get rid of the received packet
+	return true;
+}
+
+
+
+/**
+ * Acknowledges the given packet, if required.
+ *
+ * @param header Header of the packet, in host byte order
+ * @param nack When set, issue a negetive acknowledgement.
+ *
+ * @return 0 if successful, an error code otherwise.
+ */
+int LichtensteinHandler::ackPacket(lichtenstein_header_t *header, bool nack) {
+	int err;
+	void *buffer;
+
+	// TODO: test this
+	return 0;
+
+	// return if the packet doesn't require an ack
+	if(header->opcode != kOpcodeFramebufferData
+			&& header->opcode == kOpcodeSyncOutput) {
+		return -1;
+	}
+
+	// get a TX buffer
+	const size_t bytes = sizeof(lichtenstein_header_t);
+
+	err = this->sock->prepareTx(&buffer, bytes);
+
+	if(err != ip::Socket::ErrSuccess) {
+		LOG(S_ERROR, "Couldn't get TX buffer: %d", err);
+		return err;
+	}
+
+	memset(buffer, 0, bytes);
+
+	// populate header
+	lichtenstein_header_t *packet = (lichtenstein_header_t *) buffer;
+
+	packet->payloadLength = 0;
+	packet->flags |= nack ? kFlagNAck : kFlagAck;
+
+	this->populateLichtensteinHeader(packet, header->opcode);
+
+	// byteswap and insert checksum
+	this->packetHostToNetwork(packet, bytes);
+
+	packet->checksum = this->calculatePacketCRC(packet, bytes);
+	packet->checksum = __builtin_bswap32(packet->checksum);
+
+	// transmit the packet
+	err = this->sock->sendTo(buffer, this->serverAddr,
+			LichtensteinHandler::Port);
+
+	if(err != ip::Socket::ErrSuccess) {
+		LOG(S_ERROR, "Couldn't send ack: %d", err);
+
+		return err;
+	}
+
+	// assume success
+	return 0;
 }
 
 
@@ -288,9 +490,9 @@ void LichtensteinHandler::taskSendMulticastDiscovery(void) {
 	this->populateLichtensteinHeader(&packet->header, kOpcodeNodeAnnouncement);
 
 	// byteswap and insert checksum
-	this->packetHostToNetwork(packet);
+	this->packetHostToNetwork(packet, bytes);
 
-	packet->header.checksum = this->calculatePacketCRC(packet, bytes);
+	packet->header.checksum = this->calculatePacketCRC(&packet->header, bytes);
 	packet->header.checksum = __builtin_bswap32(packet->header.checksum);
 
 	// transmit the packet
@@ -307,13 +509,11 @@ void LichtensteinHandler::taskSendMulticastDiscovery(void) {
 /**
  * Populates the header of a Lichtenstein packet.
  *
- * @param _hdr Pointer to either lichtenstein_header_t or another packet struct
+ * @param header Pointer to either lichtenstein_header_t or another packet struct
  * that has the header as its first element.
  * @param opcode Opcode to insert into the packet.
  */
-void LichtensteinHandler::populateLichtensteinHeader(void *_hdr, uint16_t opcode) {
-	lichtenstein_header_t *header = (lichtenstein_header_t *) _hdr;
-
+void LichtensteinHandler::populateLichtensteinHeader(lichtenstein_header_t *header, uint16_t opcode) {
 	// insert magic, version, and opcode
 	header->magic = kLichtensteinMagic;
 	header->version = kLichtensteinVersion10;
@@ -339,18 +539,17 @@ void LichtensteinHandler::populateLichtensteinHeader(void *_hdr, uint16_t opcode
  * Since this should only be called once the packet is in network byte order,
  * if we need to read any fields, we byteswap them.
  *
- * @param _packet Pointer to packet
+ * @param header Pointer to packet
  * @param length Total bytes in the buffer pointed to by `_packet`
  * @return CRC32 to insert into the packet
  */
-uint32_t LichtensteinHandler::calculatePacketCRC(void *_packet, size_t length) {
+uint32_t LichtensteinHandler::calculatePacketCRC(lichtenstein_header_t *header, size_t length) {
 	// extract some header info
-	lichtenstein_header_t *header = (lichtenstein_header_t *) _packet;
 	size_t payloadLen = __builtin_bswap32(header->payloadLength);
 
 	// get CRC offset into the packet
 	size_t offset = offsetof(lichtenstein_header_t, opcode);
-	void *ptr = ((uint8_t *) _packet) + offset;
+	void *ptr = ((uint8_t *) header) + offset;
 	size_t len = sizeof(lichtenstein_header_t) - offset + payloadLen;
 
 	// calculate CRC
@@ -368,8 +567,11 @@ uint32_t LichtensteinHandler::calculatePacketCRC(void *_packet, size_t length) {
  *
  * @param _packet Packet
  * @param fromNetworkorder Set if the packet is in network order
+ * @param length Total number of bytes in packet
+ *
+ * @return 0 if the conversion was a success, error code otherwise.
  */
-void LichtensteinHandler::convertPacketByteOrder(void *_packet, bool fromNetworkOrder) {
+int LichtensteinHandler::convertPacketByteOrder(void *_packet, bool fromNetworkOrder, size_t length) {
 	lichtenstein_header_opcode_t opcode;
 
 	// first, process the header
@@ -398,6 +600,11 @@ void LichtensteinHandler::convertPacketByteOrder(void *_packet, bool fromNetwork
 	// handle each packet type individually
 	switch(opcode) {
 		case kOpcodeNodeAnnouncement: {
+			// ensure the length is correct
+			if(length < sizeof(lichtenstein_node_announcement_t)) {
+				return -1;
+			}
+
 			lichtenstein_node_announcement_t *announce;
 			announce = (lichtenstein_node_announcement_t *) _packet;
 
@@ -419,12 +626,45 @@ void LichtensteinHandler::convertPacketByteOrder(void *_packet, bool fromNetwork
 			announce->hostnameLen = __builtin_bswap16(announce->hostnameLen);
 			break;
 		}
+		// framebuffer data
+		case kOpcodeFramebufferData: {
+			// ensure the length is correct
+			if(length < sizeof(lichtenstein_framebuffer_data_t)) {
+				return -1;
+			}
 
-		default: {
-			LOG(S_ERROR, "Unknown packet type %u", opcode);
+			lichtenstein_framebuffer_data_t *fb;
+			fb = (lichtenstein_framebuffer_data_t *) _packet;
+
+			fb->destChannel = __builtin_bswap32(fb->destChannel);
+
+			fb->dataFormat = __builtin_bswap32(fb->dataFormat);
+			fb->dataElements = __builtin_bswap32(fb->dataElements);
 			break;
 		}
+		// output command
+		case kOpcodeSyncOutput: {
+			// ensure the length is correct
+			if(length < sizeof(lichtenstein_sync_output_t)) {
+				return -1;
+			}
+
+			lichtenstein_sync_output_t *out;
+			out = (lichtenstein_sync_output_t *) _packet;
+
+			out->channel = __builtin_bswap32(out->channel);
+			break;
+		}
+
+		// should never get here
+		default: {
+			LOG(S_ERROR, "Unknown packet type %u", opcode);
+			return -1;
+		}
 	}
+
+	// if we get down here, conversion was a success
+	return 0;
 }
 
 

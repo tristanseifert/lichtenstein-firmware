@@ -8,14 +8,19 @@
 #ifndef LEDOUT_OUTPUTTASK_H_
 #define LEDOUT_OUTPUTTASK_H_
 
+#include <LichtensteinApp.h>
+
 #include <cstddef>
 
-#include "FreeRTOSConfig.h"
-#include "FreeRTOS.h"
-#include "task.h"
-#include "timers.h"
-
 #include "RGBPixel.h"
+
+// forward-declare message type
+#ifndef OUTPUTTASK_PRIVATE
+typedef void output_message_t;
+#endif
+
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wpadded"
 
 namespace ledout {
 	class OutputTask {
@@ -36,20 +41,26 @@ namespace ledout {
 
 			void taskEntry(void) noexcept;
 
-		private:
-			void convertBuffer(int index, int pixels = 300, void *bufferPtr = nullptr);
+			void taskConvertBuffer(output_message_t *);
+			void taskSendBuffer(output_message_t *);
+
+		public:
+			int sendMessage(output_message_t *msg, int timeout = portMAX_DELAY);
 
 		private:
-			// max number of output buffers we can store
-			static const int maxOutputBuffers = 4;
+			void convertRGBW(int index, int numPixels, void *bufferPtr);
 
+		private:
+			// max number of output buffers we support
+			static const int maxOutputBuffers = 2;
+			// number of LEDs in each buffer
 			unsigned int ledsPerBuffer[maxOutputBuffers];
 
-			rgbw_pixel_t *rgbwBuffer[maxOutputBuffers];
-
+			// output buffer (sent via SPI)
 			uint8_t *outputBuffer[maxOutputBuffers];
 			unsigned int outputBufferBytesWritten[maxOutputBuffers];
 
+			// frame counters
 			unsigned int fpsCounter[maxOutputBuffers];
 			unsigned int fps[maxOutputBuffers];
 
@@ -59,12 +70,17 @@ namespace ledout {
 			// size of the stack
 			static const size_t TaskStackSize = 200;
 			// output task priority
-			static const size_t TaskPriority = 3;
+			static const size_t TaskPriority = 2;
+			// how many messages can be pending at a time in the message queue
+			static const size_t MessageQueueDepth = 4;
 
-			TaskHandle_t handle;
-			TimerHandle_t fpsTimer;
+			TaskHandle_t handle = nullptr;
+			TimerHandle_t fpsTimer = nullptr;
+
+			QueueHandle_t messageQueue = nullptr;
 	};
-
 } /* namespace ledout */
+
+#pragma GCC diagnostic pop
 
 #endif /* LEDOUT_OUTPUTTASK_H_ */

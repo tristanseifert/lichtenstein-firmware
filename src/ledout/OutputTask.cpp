@@ -10,13 +10,15 @@
  *      Author: tristan
  */
 #define LOG_MODULE "OUT"
+#define OUTPUTTASK_PRIVATE
 
+#include "OutputTaskPrivate.h"
 #include "OutputTask.h"
 #include "Output.h"
 
 #include "OutputBitPatternLUT.h"
 
-#include "LichtensteinApp.h"
+#include <LichtensteinApp.h>
 
 #include <cstring>
 
@@ -68,15 +70,23 @@ void _OutputTaskTrampoline(void *ctx) {
 OutputTask::OutputTask() {
 	BaseType_t ok;
 
+	// create message queue
+	this->messageQueue = xQueueCreate(OutputTask::MessageQueueDepth,
+			sizeof(output_message_t));
+
+	if(this->messageQueue == nullptr) {
+		LOG(S_FATAL, "Couldn't create message queue");
+	}
+
+	// create output task
 	ok = xTaskCreate(_OutputTaskTrampoline, "LEDOut", OutputTask::TaskStackSize,
 					 this, OutputTask::TaskPriority, &this->handle);
 
 	if(ok != pdPASS) {
-		LOG(S_ERROR, "Couldn't create LEDOut task!");
+		LOG(S_ERROR, "Couldn't create task");
 	}
 
 	// allocate buffers
-	memset(&this->rgbwBuffer, 0, sizeof(this->rgbwBuffer));
 	memset(&this->outputBuffer, 0, sizeof(this->outputBuffer));
 
 	for(int i = 0; i < OutputTask::maxOutputBuffers; i++) {
@@ -102,7 +112,6 @@ OutputTask::~OutputTask() {
 
 	// free buffers
 	for(int i = 0; i < numOutputChannels; i++) {
-		vPortFree(this->rgbwBuffer[i]);
 		vPortFree(this->outputBuffer[i]);
 	}
 }
@@ -113,24 +122,13 @@ OutputTask::~OutputTask() {
 void OutputTask::allocBuffers(void) {
 	for(int i = 0; i < numOutputChannels; i++) {
 		// allocate buffers
-		this->rgbwBuffer[i] = (rgbw_pixel_t *) pvPortMalloc(pixelBufSz);
 		this->outputBuffer[i] = (uint8_t *) pvPortMalloc(outputBufSz);
 
-		LOG(S_DEBUG, "allocated buffer %d: rgb = 0x%x, size %u, output = 0x%x, size %u",
-					 i, this->rgbwBuffer[i], (ledsPerChannel * bytesPerPixel),
-					 this->outputBuffer[i], outputBufSz);
+		LOG(S_DEBUG, "allocated buffer %d: output = 0x%x, size %u",
+					 i, this->outputBuffer[i], outputBufSz);
 
 		// clear them
-		memset(this->rgbwBuffer[i], 0, pixelBufSz);
 		memset(this->outputBuffer[i], 0, outputBufSz);
-
-		this->rgbwBuffer[0][0].r = 0x80;
-		this->rgbwBuffer[0][1].g = 0x80;
-		this->rgbwBuffer[0][2].b = 0x80;
-		this->rgbwBuffer[0][3].w = 0x80;
-
-		this->rgbwBuffer[0][6].r = 0x80;
-		this->rgbwBuffer[0][6].g = 0x80;
 	}
 }
 
@@ -138,40 +136,106 @@ void OutputTask::allocBuffers(void) {
  * Entry point for the task.
  */
 void OutputTask::taskEntry(void) noexcept {
-	Output *o = Output::sharedInstance();
+	BaseType_t ok;
+	output_message_t msg;
 
 	// create the FPS timer
 	this->fpsTimer = xTimerCreate("OutFPS", pdMS_TO_TICKS(1000), pdTRUE, this,
 								 OutputFPSTimerCallback);
 	xTimerStart(this->fpsTimer, portMAX_DELAY);
 
-	// enable output
-//	o->setOutputEnable(true);
-
-	// keep pulling new RGBW buffers off the queue and process them
+	// process messages in here
 	while(1) {
-		// convert each RGB buffer
-		for(int i = 0; i < numOutputChannels; i++) {
-			this->convertBuffer(i, this->ledsPerBuffer[i]);
+		// pull messages off the queue
+		ok = xQueueReceive(this->messageQueue, &msg, portMAX_DELAY);
+
+		if(ok != pdPASS) {
+			LOG(S_ERROR, "Error reading queue: %u", ok);
+			continue;
 		}
 
-		// enable output and output each buffer
-		for(int i = 0; i < numOutputChannels; i++) {
-			// TODO: output the second buffer correctly too ;)
-			o->outputData(i, this->outputBuffer[0], this->outputBufferBytesWritten[0]);
+		// interpret the message type
+		switch(msg.type) {
+			// convert an output buffer
+			case kOutputMessageConvert:
+				this->taskConvertBuffer(&msg);
+				break;
 
-			this->fpsCounter[i]++;
+			// output a buffer
+			case kOutputMessageSend:
+				this->taskSendBuffer(&msg);
+				break;
 		}
-
-		this->rgbwBuffer[0][0].r += 1;
-		this->rgbwBuffer[0][1].g += 2;
-		this->rgbwBuffer[0][2].b += 3;
-		this->rgbwBuffer[0][3].w += 4;
-
-		// delay lol
-		vTaskDelay(2);
 	}
 }
+
+/**
+ * Performs the conversion of the pixel data and executes the callback.
+ *
+ * @param msg Message
+ */
+void OutputTask::taskConvertBuffer(output_message_t *msg) {
+	// perform conversion
+	if(msg->payload.convert.isRGBW) {
+		this->convertRGBW(msg->channel, msg->payload.convert.numLEDs,
+				msg->payload.convert.buffer);
+	} else {
+		// TODO: RGB conversion
+		LOG(S_FATAL, "RGB buffer conversion not implemented yet");
+	}
+
+	// run callback if specified
+	if(msg->callback != nullptr) {
+		msg->callback(msg->cbContext1, msg->cbContext2);
+	}
+}
+
+/**
+ * Sends an already converted buffer to the output.
+ *
+ * @param msg Received message
+ */
+void OutputTask::taskSendBuffer(output_message_t *msg) {
+	unsigned int i = msg->channel;
+
+	// perform output
+	Output::sharedInstance()->outputData(i, this->outputBuffer[i],
+			this->outputBufferBytesWritten[i]);
+
+	// increment frame counter
+	this->fpsCounter[i]++;
+
+	// run callback if specified
+	if(msg->callback != nullptr) {
+		msg->callback(msg->cbContext1, msg->cbContext2);
+	}
+}
+
+
+
+/**
+ * Sends a message to the output task.
+ *
+ * @param msg Pointer to the message to post
+ * @return 0 if successful, error code otherwise
+ */
+int OutputTask::sendMessage(output_message_t *msg, int timeout) {
+	BaseType_t ok;
+
+	// send message
+	ok = xQueueSendToBack(this->messageQueue, msg, timeout);
+
+	// handle errors
+	if(ok != pdPASS) {
+		LOG(S_ERROR, "Couldn't send message to task: %u", ok);
+		return 1;
+	}
+
+	// success if we get down here
+	return 0;
+}
+
+
 
 /**
  * Converts the RGBW buffer into the SPI bitstream that is output. This writes
@@ -181,15 +245,16 @@ void OutputTask::taskEntry(void) noexcept {
  * - A 0 bit is 0b100
  * - A 1 bit is 0b110
  */
-void OutputTask::convertBuffer(int index, int pixels, void *bufferPtr) {
+void OutputTask::convertRGBW(int index, int pixels, void *bufferPtr) {
 	uint8_t *buf = (this->outputBuffer[index]); // first byte is zero
 
 	// get the read buffer
-	rgbw_pixel_t *read;
-	if(bufferPtr) {
-		read = reinterpret_cast<rgbw_pixel_t *>(bufferPtr);
-	} else {
-		read = reinterpret_cast<rgbw_pixel_t *>(this->rgbwBuffer[index]);
+	rgbw_pixel_t *read = reinterpret_cast<rgbw_pixel_t *>(bufferPtr);
+
+	if(read == nullptr) {
+		LOG(S_ERROR, "buffer may not be null");
+
+		return;
 	}
 
 	// keep track of how many bytes we write

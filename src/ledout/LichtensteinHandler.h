@@ -14,6 +14,13 @@
 
 #include <LichtensteinApp.h>
 
+// forward declare message types
+#ifndef LICHTENSTEIN_PRIVATE
+typedef void lichtenstein_header_t;
+typedef void lichtenstein_framebuffer_data_t;
+typedef void lichtenstein_sync_output_t;
+#endif
+
 namespace ip {
 	class UDPSocket;
 };
@@ -51,8 +58,11 @@ namespace ledout {
 
 			ip::UDPSocket *sock = nullptr;
 
+			// TODO: fill this in
+			stack_ipv4_addr_t serverAddr = kIPv4AddressZero;
+
 		private:
-			friend void _DoMulticastAnnouncement(TimerHandle_t timer);
+			friend void _DoMulticastAnnouncement(TimerHandle_t);
 
 			// messages to pass in the queue
 			typedef enum {
@@ -66,9 +76,23 @@ namespace ledout {
 			void taskSendMulticastDiscovery(void);
 
 		private:
-			void populateLichtensteinHeader(void *, uint16_t);
+			friend void _LichtensteinTaskTrampoline(void *);
+			friend void _ConversionCompleteCallback(void *, void *);
 
-			uint32_t calculatePacketCRC(void *, size_t);
+			void taskEntry(void);
+
+			void setUpSocket(void);
+			void tearDownSocket(void);
+
+			bool taskHandleFBData(lichtenstein_framebuffer_data_t *);
+			bool taskHandleSyncOut(lichtenstein_sync_output_t *);
+
+			int ackPacket(lichtenstein_header_t *, bool nack = false);
+
+		private:
+			void populateLichtensteinHeader(lichtenstein_header_t *, uint16_t);
+
+			uint32_t calculatePacketCRC(lichtenstein_header_t *, size_t);
 
 			void setUpCRC(void);
 			void cleanUpCRC(void);
@@ -78,22 +102,14 @@ namespace ledout {
 
 		// byte order conversion helpers
 		private:
-			void convertPacketByteOrder(void *, bool);
+			int convertPacketByteOrder(void *, bool, size_t);
 
-			void packetNetworkToHost(void *_packet) {
-				this->convertPacketByteOrder(_packet, true);
+			inline int packetNetworkToHost(void *_packet, size_t length) {
+				return this->convertPacketByteOrder(_packet, true, length);
 			}
-			void packetHostToNetwork(void *_packet) {
-				this->convertPacketByteOrder(_packet, false);
+			inline int packetHostToNetwork(void *_packet, size_t length) {
+				return this->convertPacketByteOrder(_packet, false, length);
 			}
-
-		private:
-			friend void _LichtensteinTaskTrampoline(void *);
-
-			void taskEntry(void);
-
-			void setUpSocket(void);
-			void tearDownSocket(void);
 	};
 
 } /* namespace ledout */
