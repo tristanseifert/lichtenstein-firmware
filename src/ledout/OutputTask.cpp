@@ -29,8 +29,6 @@ static const int numOutputChannels = 2;
 static const int ledsPerChannel = 300;
 static const int bytesPerPixel = 4;
 
-static const int pixelBufSz = (ledsPerChannel * bytesPerPixel);
-
 // factors for sizing the SPI output DMA buffer
 static const int outputBitsPerDataBit = 3;
 static const int outputBytesPerPixel = (bytesPerPixel * 8 * outputBitsPerDataBit) / 8;
@@ -93,6 +91,7 @@ OutputTask::OutputTask() {
 		this->fpsCounter[i] = this->fps[i] = 0;
 
 		// conservative default value
+		// TODO: get proper value for this
 		this->ledsPerBuffer[i] = 150;
 	}
 
@@ -164,6 +163,11 @@ void OutputTask::taskEntry(void) noexcept {
 			// output a buffer
 			case kOutputMessageSend:
 				this->taskSendBuffer(&msg);
+				break;
+
+			// should NEVER get here
+			default:
+				LOG(S_FATAL, "Unknown message type: %u", msg.type);
 				break;
 		}
 	}

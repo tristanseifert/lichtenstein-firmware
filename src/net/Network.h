@@ -33,6 +33,8 @@ class Network {
 	friend class net::EthMAC;
 	friend class net::EthPHY;
 
+	friend class ip::Stack;
+
 	public:
 		static void init(void);
 		static Network *sharedInstance(void) noexcept;

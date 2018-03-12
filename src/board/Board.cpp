@@ -825,13 +825,13 @@ uint8_t Board::calculateConfigChecksum(board_config_t *cfg) {
  * Set the idle LED in the idle task hook.
  */
 extern "C" void vApplicationIdleHook(void) {
-	Board::sharedInstance()->setLED(Board::kBoardLEDIdle, 1);
+	Board::sharedInstance()->setLED(Board::kBoardLEDIdle, true);
 }
 
 /**
  * Clear the idle LED in the tick hook.
  */
 extern "C" void vApplicationTickHook(void) {
-	Board::sharedInstance()->setLED(Board::kBoardLEDIdle, 0);
+	Board::sharedInstance()->setLED(Board::kBoardLEDIdle, false);
 }
 

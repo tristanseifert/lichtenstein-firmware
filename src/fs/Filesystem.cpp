@@ -234,8 +234,6 @@ void Filesystem::setUpSPI(void) {
 
 	SPI_Init(FLASH_SPI_PERIPH, &spi);
 	SPI_Cmd(FLASH_SPI_PERIPH, ENABLE);
-
-	LOG(S_INFO, "Set up flash SPI");
 }
 
 /**

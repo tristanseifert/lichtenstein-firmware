@@ -13,6 +13,8 @@
 
 #include <LichtensteinApp.h>
 
+#include <cstring>
+
 // set to use interrupts instead of polling for link state
 #define POLL_LINK_STATE						1
 
@@ -55,19 +57,30 @@ DP83848C::DP83848C(Network *_net, EthMAC *_mac, bool _rmii, uint16_t _addr) : Et
 void DP83848C::setUpRegisters(void) {
 	uint16_t temp;
 
-	// get PHY status
+	// get PHY status and supported modes
 	uint16_t status = this->readStatus();
-	LOG(S_DEBUG, "status: 0x%04x", status);
 
+	char supported[64];
+	char *writePtr = (char *) &supported;
+
+	// NOTE: strcpy is unsafe but we're not taking user buffers
 	if(status & MDIO_REG_BMSR_100BASETX_FD) {
-		LOG(S_DEBUG, "PHY is 100BASE-TX full duplex capable");
+		strcpy(writePtr, "100BASE-TX FD ");
+		writePtr += 14;
 	} if(status & MDIO_REG_BMSR_100BASETX_HD) {
-		LOG(S_DEBUG, "PHY is 100BASE-TX half duplex capable");
+		strcpy(writePtr, "100BASE-TX HD ");
+		writePtr += 14;
 	} if(status & MDIO_REG_BMSR_10BASET_FD) {
-		LOG(S_DEBUG, "PHY is 10BASE-T full duplex capable");
+		strcpy(writePtr, "10BASE-T FD ");
+		writePtr += 12;
 	} if(status & MDIO_REG_BMSR_10BASET_HD) {
-		LOG(S_DEBUG, "PHY is 10BASE-T half duplex capable");
+		strcpy(writePtr, "10BASE-T HD ");
+		writePtr += 12;
 	}
+
+	// zeor-terminate supported string
+//	*writePtr++ = 0;
+	LOG(S_INFO, "PHY supports %s", supported);
 
 
 	// start the transaction

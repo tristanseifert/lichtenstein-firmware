@@ -52,6 +52,11 @@ namespace ip {
 
 			bool resolveIPToMAC(stack_ipv4_addr_t addr, stack_mac_addr_t *result, int timeout = 100);
 
+		// helper APIs for MAC filtering
+		public:
+			void addMulticastMAC(stack_mac_addr_t addr);
+			void removeMulticastMAC(stack_mac_addr_t addr);
+
 		// private calls for packet handling
 		private:
 			void doneWithRxPacket(void *);

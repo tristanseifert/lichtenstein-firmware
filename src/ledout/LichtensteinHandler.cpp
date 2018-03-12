@@ -444,6 +444,8 @@ void LichtensteinHandler::taskSendMulticastDiscovery(void) {
 	int err;
 	void *buffer;
 
+	LOG(S_DEBUG, "Sending multicast discovery");
+
 	// get pointer to stack and hostname length
 	const ip::Stack *stack = Network::sharedInstance()->getStack();
 
@@ -490,7 +492,11 @@ void LichtensteinHandler::taskSendMulticastDiscovery(void) {
 	this->populateLichtensteinHeader(&packet->header, kOpcodeNodeAnnouncement);
 
 	// byteswap and insert checksum
-	this->packetHostToNetwork(packet, bytes);
+	err = this->packetHostToNetwork(packet, bytes);
+
+	if(err != 0) {
+		LOG(S_FATAL, "Couldn't byteswap discovery packet: %d", err);
+	}
 
 	packet->header.checksum = this->calculatePacketCRC(&packet->header, bytes);
 	packet->header.checksum = __builtin_bswap32(packet->header.checksum);

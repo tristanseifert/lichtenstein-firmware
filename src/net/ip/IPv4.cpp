@@ -26,6 +26,8 @@
 #define DEBUG_PACKET_RECEPTION				0
 // enable to log information when packets are transmitted
 #define DEBUG_PACKET_TRANSMISSION			0
+// log when the multicast filter is changed
+#define LOG_MULTICAST_FILTER					1
 
 
 namespace ip {
@@ -134,6 +136,8 @@ void IPv4::handleIPv4Frame(void *_packet) {
 
 		// call into the appropriate protocol handler
 		switch(rx->ipv4Header->protocol) {
+			// TODO: broadcasted ICMP
+
 			// handle broadcasted UDP
 			case kIPv4ProtocolUDP:
 				this->udp->processBroadcastFrame(rx);
@@ -155,6 +159,11 @@ void IPv4::handleIPv4Frame(void *_packet) {
 
 			// call into the appropriate protocol handler
 			switch(rx->ipv4Header->protocol) {
+				// handle multicasted ICMP
+				case kIPv4ProtocolICMP:
+					this->icmp->processMulticastFrame(rx);
+					break;
+
 				// handle multicasted UDP
 				case kIPv4ProtocolUDP:
 					this->udp->processMulticastFrame(rx);
@@ -171,6 +180,10 @@ void IPv4::handleIPv4Frame(void *_packet) {
 					break;
 			}
 		} else {
+#if DEBUG_PACKET_RECEPTION
+			LOG(S_DEBUG, "Ignored multicast from %s to %s, protocol 0x%02x", srcIp, destIp, rx->ipv4Header->protocol);
+#endif
+
 			// ignore the frame
 			this->releaseRxBuffer(rx);
 		}
@@ -207,11 +220,23 @@ bool IPv4::isMulticastAddressAllowed(stack_ipv4_addr_t addr) {
  * @return 0 if successful.
  */
 int IPv4::addMulticastAddress(stack_ipv4_addr_t addr) {
+	bool ok;
+
+	// convert IP to string
+#if LOG_MULTICAST_FILTER
+	char ipStr[16];
+	Stack::ipToString(addr, ipStr, 16);
+#endif
+
 	// check if we've already added this address
 	for(size_t i = 0; i < IPv4::multicastFilterSize; i++) {
 		// does the address match? if so, increment the reference count.
 		if(this->multicastFilter[i] == addr) {
 			this->multicastFilterRefCount[i]++;
+
+#if LOG_MULTICAST_FILTER
+			LOG(S_DEBUG, "Increased refcount for %s: %u", ipStr, this->multicastFilterRefCount[i]);
+#endif
 			return 0;
 		}
 	}
@@ -220,9 +245,24 @@ int IPv4::addMulticastAddress(stack_ipv4_addr_t addr) {
 	for(size_t i = 0; i < IPv4::multicastFilterSize; i++) {
 		// is the address empty?
 		if(this->multicastFilter[i] == kIPv4AddressZero) {
+			// add the MAC for this multicast IP to the filter
+			stack_mac_addr_t multicastMAC;
+			ok = this->stack->resolveIPToMAC(addr, &multicastMAC, 0);
+
+			if(!ok) {
+				LOG(S_ERROR, "Couldn't translate multicast MAC to IP");
+				return -1;
+			}
+
+			this->stack->addMulticastMAC(multicastMAC);
+
 			// if so, write the address into it and set reference count
 			this->multicastFilter[i] = addr;
 			this->multicastFilterRefCount[i] = 1;
+
+#if LOG_MULTICAST_FILTER
+			LOG(S_DEBUG, "Inserted %s", ipStr);
+#endif
 
 			// send IGMP message
 			this->igmp->joinedGroup(addr);
@@ -241,6 +281,14 @@ int IPv4::addMulticastAddress(stack_ipv4_addr_t addr) {
  * @return 0 if it was successfully removed.
  */
 int IPv4::removeMulticastAddress(stack_ipv4_addr_t addr) {
+	bool ok;
+
+	// convert IP to string
+#if LOG_MULTICAST_FILTER
+	char ipStr[16];
+	Stack::ipToString(addr, ipStr, 16);
+#endif
+
 	// try to find an empty entry (all zero's address)
 	for(size_t i = 0; i < IPv4::multicastFilterSize; i++) {
 		// does this address match?
@@ -251,9 +299,30 @@ int IPv4::removeMulticastAddress(stack_ipv4_addr_t addr) {
 				this->multicastFilter[i] = kIPv4AddressZero;
 
 				// send IGMP message
-				this->igmp->joinedGroup(addr);
+				this->igmp->leftGroup(addr);
+
+				// remove the MAC for this multicast IP to the filter
+				stack_mac_addr_t multicastMAC;
+				ok = this->stack->resolveIPToMAC(addr, &multicastMAC, 0);
+
+				if(!ok) {
+					LOG(S_ERROR, "Couldn't translate multicast MAC to IP");
+					return -1;
+				}
+
+				this->stack->removeMulticastMAC(multicastMAC);
+
+				// logging
+#if LOG_MULTICAST_FILTER
+				LOG(S_DEBUG, "Removed multicast filter for %s", ipStr);
+#endif
 
 				// TODO: shift everything below this address up one slice?
+			} else {
+#if LOG_MULTICAST_FILTER
+				LOG(S_DEBUG, "Decreased refcount for %s: %u", ipStr,
+						this->multicastFilterRefCount[i]);
+#endif
 			}
 			return 0;
 		}

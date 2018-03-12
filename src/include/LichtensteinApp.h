@@ -10,6 +10,13 @@
 #ifndef INCLUDE_LICHTENSTEINAPP_H_
 #define INCLUDE_LICHTENSTEINAPP_H_
 
+// debug breakpoints
+#ifdef DEBUG
+	#define DebugBreakpoint()  asm volatile ("bkpt 0")
+#else
+	#define DebugBreakpoint()
+#endif
+
 // logging
 #include "LoggerGlobal.h"
 

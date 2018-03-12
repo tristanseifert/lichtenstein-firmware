@@ -144,6 +144,9 @@ void Output::initOutputGPIOs(void) {
 
 	GPIO_WriteBit(LED_OE_PORT, LED_OE_PIN, LED_OE_ACTIVE_LOW ? Bit_SET : Bit_RESET);
 
+	// reset all strips attached
+	this->initGPIOsResetStrips();
+
 
 /*	// set up LED0 out
 	RCC_APB2PeriphClockCmd(LED_OUT0_GPIO_CLOCK, ENABLE);
@@ -198,6 +201,60 @@ void Output::initOutputGPIOs(void) {
 }
 
 /**
+ * Initializes the GPIOs for the output channels as normal push-pull, then
+ * sends a reset pulse.
+ *
+ * TODO: fix the shittiness in LED0 out
+ */
+void Output::initGPIOsResetStrips(void) {
+	volatile unsigned int timeout;
+
+	// basic GPIO parameters
+	GPIO_InitTypeDef gpio;
+	GPIO_StructInit(&gpio);
+
+	gpio.GPIO_Mode = GPIO_Mode_Out_PP;
+	gpio.GPIO_Speed = GPIO_Speed_50MHz;
+
+/*	// set up LED0 out
+	RCC_APB2PeriphClockCmd(LED_OUT0_GPIO_CLOCK, ENABLE);
+
+	gpio.GPIO_Pin = LED_OUT0_PIN;
+	GPIO_Init(LED_OUT0_PORT, &gpio);
+*/
+	// set up LED1 out
+	RCC_APB2PeriphClockCmd(LED_OUT1_GPIO_CLOCK, ENABLE);
+
+	gpio.GPIO_Pin = LED_OUT1_PIN;
+	GPIO_Init(LED_OUT1_PORT, &gpio);
+
+	// set both pins to high
+//	GPIO_SetBits(LED_OUT0_PORT, LED_OUT0_PIN);
+	GPIO_SetBits(LED_OUT1_PORT, LED_OUT1_PIN);
+
+	// assert output enable
+	this->setOutputEnable(true);
+
+	// set pins low to make reset pulse
+	timeout = 33333; while(timeout--) {}
+
+//	GPIO_ResetBits(LED_OUT0_PORT, LED_OUT0_PIN);
+	GPIO_ResetBits(LED_OUT1_PORT, LED_OUT1_PIN);
+
+	// set pins high again to complete reset pulse
+	timeout = 33333; while(timeout--) {}
+
+//	GPIO_SetBits(LED_OUT0_PORT, LED_OUT0_PIN);
+	GPIO_SetBits(LED_OUT1_PORT, LED_OUT1_PIN);
+
+	// wait
+	timeout = 33333; while(timeout--) {}
+
+	// disable output
+	this->setOutputEnable(false);
+}
+
+/**
  * Initializes the DMA engine for the output SPI drivers.
  */
 void Output::initOutputDMA(void) {
@@ -213,8 +270,8 @@ void Output::initOutputDMA(void) {
 	}
 
 	// enable clocks for the DMA
-	RCC_AHBPeriphClockCmd(LED_OUT0_DMA_RCC_CLOCK, ENABLE);
-	RCC_AHBPeriphClockCmd(LED_OUT1_DMA_RCC_CLOCK, ENABLE);
+	RCC_AHBPeriphClockCmd((LED_OUT0_DMA_RCC_CLOCK | LED_OUT1_DMA_RCC_CLOCK),
+			ENABLE);
 
 
 	// enable the DMA interrupt to pass through the NVIC
@@ -250,7 +307,7 @@ void Output::setOutputEnable(bool enable) {
 
 	GPIO_WriteBit(LED_OE_PORT, LED_OE_PIN, state);
 
-	// set LED
+	// set output enable LED
 	Board::sharedInstance()->setLED(Board::kBoardLEDOutputAct, enable);
 }
 
@@ -274,7 +331,7 @@ int Output::outputData(int channel, void *data, size_t length) {
 
 	// get the SPI peripheral
 	if(channel == 0) {
-		// XXX: fix this
+		// XXX: fix this (mux with flash SPI bus)
 		spi = LED_OUT0_SPI;
 		return 0;
 	} else if(channel == 1) {
@@ -288,34 +345,6 @@ int Output::outputData(int channel, void *data, size_t length) {
 
 	DMA_Channel_TypeDef *dmaChannel;
 
-	// if a DMA is in progress, wait for it to complete
-//	trace_printf("channel %u, output %u bytes from 0x%x; waiting for lock\n", channel, length, data);
-	xSemaphoreTake(this->dmaSemaphores[channel], portMAX_DELAY);
-//	trace_printf("got lock!\n");
-
-	// enable output if needed
-	if(this->activeOutputs++ == 0) {
-		this->setOutputEnable(true);
-	}
-
-	// now that we have the semaphore, enter a critical section
-	taskENTER_CRITICAL();
-
-	// set up the channel and peripheral base
-	if(channel == 0) {
-		dmaChannel = LED_OUT0_DMA_PERIPH;
-		spi = LED_OUT0_SPI;
-
-		dma.DMA_PeripheralBaseAddr = LED_OUT0_DMA_PERIPH_BASE;
-	} else if(channel == 1) {
-		dmaChannel = LED_OUT1_DMA_PERIPH;
-		spi = LED_OUT1_SPI;
-
-		dma.DMA_PeripheralBaseAddr = LED_OUT1_DMA_PERIPH_BASE;
-	}
-
-	// clear/reset the DMA
-	DMA_DeInit(dmaChannel);
 
 	// set the shared parameters for DMA
 	dma.DMA_BufferSize = length;
@@ -334,7 +363,39 @@ int Output::outputData(int channel, void *data, size_t length) {
 	dma.DMA_DIR = DMA_DIR_PeripheralDST;
 	dma.DMA_MemoryBaseAddr = (uint32_t) data;
 
-	// initialize the DMA
+	// set up the channel and peripheral base
+	if(channel == 0) {
+		dmaChannel = LED_OUT0_DMA_PERIPH;
+		spi = LED_OUT0_SPI;
+
+		dma.DMA_PeripheralBaseAddr = LED_OUT0_DMA_PERIPH_BASE;
+	} else if(channel == 1) {
+		dmaChannel = LED_OUT1_DMA_PERIPH;
+		spi = LED_OUT1_SPI;
+
+		dma.DMA_PeripheralBaseAddr = LED_OUT1_DMA_PERIPH_BASE;
+	}
+
+
+
+	// if a DMA is in progress, wait for it to complete
+	xSemaphoreTake(this->dmaSemaphores[channel], portMAX_DELAY);
+
+	// enable output if needed
+	if(this->activeOutputs++ == 0) {
+		this->setOutputEnable(true);
+	}
+
+
+
+
+	// now that we have the semaphore, enter a critical section
+	taskENTER_CRITICAL();
+
+	// clear/reset the DMA
+	DMA_DeInit(dmaChannel);
+
+	// initialize and enable the DMA
 	DMA_Init(dmaChannel, &dma);
 	DMA_Cmd(dmaChannel, ENABLE);
 
@@ -345,6 +406,9 @@ int Output::outputData(int channel, void *data, size_t length) {
 
 	// exit critical section
 	taskEXIT_CRITICAL();
+
+
+
 #else
 	// enter critical section
 	taskENTER_CRITICAL();

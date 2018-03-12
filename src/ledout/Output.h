@@ -35,6 +35,7 @@ class Output {
 
 	private:
 		void initOutputGPIOs(void);
+		void initGPIOsResetStrips(void);
 		void initOutputDMA(void);
 
 		void setOutputEnable(bool enable);

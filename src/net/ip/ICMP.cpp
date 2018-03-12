@@ -101,6 +101,59 @@ void ICMP::processUnicastFrame(void *_packet) {
 	icmp_task_message_t msg;
 	msg.source = source;
 
+	// handle packet
+	this->processPacket(packet, &msg, rx);
+
+	// release the packet
+	this->ipv4->releaseRxBuffer(rx);
+}
+
+/**
+ * Processes a received multicast frame.
+ *
+ * @param _packet Pointer to receive buffer
+ */
+void ICMP::processMulticastFrame(void *_packet) {
+	stack_ipv4_rx_packet_t *rx = (stack_ipv4_rx_packet_t *) _packet;
+
+	// get the packet and convert byte order
+	icmp_packet_ipv4_t *packet = (icmp_packet_ipv4_t *) rx->payload;
+	this->packetNetworkToHost(packet);
+
+	// get the source address
+	stack_ipv4_addr_t source = this->ipv4->getRxBufferSource(rx);
+
+	// do some logging
+#if LOG_RECEIVED_PINGS || LOG_RECEIVED_PACKETS
+	char srcIpStr[16];
+	Stack::ipToString(source, srcIpStr, 16);
+#endif
+#if LOG_RECEIVED_PACKETS
+	LOG(S_DEBUG, "Received ICMP frame with type %u from %s", packet->type, srcIpStr);
+#endif
+
+	// this message struct is used if we need to act on the message
+	icmp_task_message_t msg;
+	msg.source = source;
+
+	// handle packet
+	this->processPacket(packet, &msg, rx);
+
+	// release the packet
+	this->ipv4->releaseRxBuffer(rx);
+}
+
+/**
+ * Processes a received ICMP packet.
+ *
+ * @param _packet ICMP packet
+ * @param _msg Message buffer
+ * @param rx IPv4 receive buffer
+ */
+void ICMP::processPacket(void *_packet, void *_msg, void *rx) {
+	icmp_packet_ipv4_t *packet = (icmp_packet_ipv4_t *) _packet;
+	icmp_task_message_t *msg = (icmp_task_message_t *) _msg;
+
 	// is it an echo request?
 	if(packet->type == kCIMPTypeEchoRequest) {
 #if LOG_RECEIVED_PINGS
@@ -109,10 +162,10 @@ void ICMP::processUnicastFrame(void *_packet) {
 
 		// generate a response if enabled
 		if(this->respondToEchoRequests) {
-			msg.type = kICMPMessageSendEchoReply;
+			msg->type = kICMPMessageSendEchoReply;
 
-			msg.data.echoRequest.identifier = packet->data.echoRequest.identifier;
-			msg.data.echoRequest.sequence = packet->data.echoRequest.sequence;
+			msg->data.echoRequest.identifier = packet->data.echoRequest.identifier;
+			msg->data.echoRequest.sequence = packet->data.echoRequest.sequence;
 
 			// copy the additional data in this packet
 			int payloadSz = this->ipv4->getRxBufferPayloadLength(rx);
@@ -127,30 +180,27 @@ void ICMP::processUnicastFrame(void *_packet) {
 					LOG(S_ERROR, "Can't allocate payload buffer");
 
 					// we still will send the packet, but without the payload
-					msg.data.echoRequest.additionalDataLength = 0;
+					msg->data.echoRequest.additionalDataLength = 0;
 				} else {
 					// copy the payload and pass it with the message
 					memcpy(buffer, packet->data.echoRequest.payload, payloadSz);
 
-					msg.data.echoRequest.additionalData = buffer;
-					msg.data.echoRequest.additionalDataLength = payloadSz;
+					msg->data.echoRequest.additionalData = buffer;
+					msg->data.echoRequest.additionalDataLength = payloadSz;
 				}
 			} else {
 				// no payload available
-				msg.data.echoRequest.additionalDataLength = 0;
+				msg->data.echoRequest.additionalDataLength = 0;
 			}
 
-			if(this->postMessageToTask(&msg, 0) != 0) {
+			if(this->postMessageToTask(msg, 0) != 0) {
 				LOG(S_ERROR, "Can't respond to echo request");
 
 				// deallocate the buffer we allocated earlier
-				vPortFree(msg.data.echoRequest.additionalData);
+				vPortFree(msg->data.echoRequest.additionalData);
 			}
 		}
 	}
-
-	// release the packet
-	this->ipv4->releaseRxBuffer(rx);
 }
 
 

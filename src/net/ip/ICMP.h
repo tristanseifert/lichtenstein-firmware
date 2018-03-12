@@ -32,6 +32,9 @@ namespace ip {
 		// API for the IPv4 handler to call into
 		public:
 			void processUnicastFrame(void *);
+			void processMulticastFrame(void *);
+
+			void processPacket(void *, void *, void *);
 
 		// byte order conversion helpers
 		private:

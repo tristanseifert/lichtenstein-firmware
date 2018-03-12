@@ -593,6 +593,12 @@ void *Network::getTxBuffer(size_t size, int timeout) {
  * has been transmitted.
  */
 void Network::queueTxBuffer(void *addr) {
+	// handle address of zero
+	if(addr == nullptr) {
+		LOG(S_ERROR, "addr cannot be nullptr");
+		DebugBreakpoint();
+	}
+
 	// get the index of the buffer
 	int index = -1;
 
@@ -604,15 +610,15 @@ void Network::queueTxBuffer(void *addr) {
 	}
 
 	if(index == -1) {
-		LOG(S_ERROR, "Couldn't find tx buffer");
+		LOG(S_ERROR, "Couldn't find tx buffer 0x%08x", addr);
 		return;
+	} else {
+		// get the length that was originally specified
+		size_t length = this->bytesToTransmit[index];
+
+		// hand it off to the MAC
+		this->mac->transmitPacket(addr, length, index);
 	}
-
-	// get the length that was originally specified
-	size_t length = this->bytesToTransmit[index];
-
-	// hand it off to the MAC
-	this->mac->transmitPacket(addr, length, index);
 }
 
 /**

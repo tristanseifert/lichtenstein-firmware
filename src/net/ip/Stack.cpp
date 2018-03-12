@@ -468,6 +468,26 @@ bool Stack::resolveIPToMAC(stack_ipv4_addr_t addr, stack_mac_addr_t *result, int
 
 
 /**
+ * Adds the given MAC address to the hash filter.
+ *
+ * @param addr MAC address to add
+ */
+void Stack::addMulticastMAC(stack_mac_addr_t addr) {
+	this->net->mac->setMulticastAddr(&addr.bytes[0], true);
+}
+
+/**
+ * Removes the given MAC address from the hash filter.
+ *
+ * @param addr MAC address to remove
+ */
+void Stack::removeMulticastMAC(stack_mac_addr_t addr) {
+	this->net->mac->setMulticastAddr(&addr.bytes[0], false);
+}
+
+
+
+/**
  * Converts an IP address to a string.
  */
 void Stack::ipToString(stack_ipv4_addr_t addr, char *out, size_t outLen) {
