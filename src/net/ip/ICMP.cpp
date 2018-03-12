@@ -102,7 +102,7 @@ void ICMP::processUnicastFrame(void *_packet) {
 	msg.source = source;
 
 	// handle packet
-	this->processPacket(packet, &msg, rx);
+	this->processPacket(packet, &msg, rx, UNICAST);
 
 	// release the packet
 	this->ipv4->releaseRxBuffer(rx);
@@ -129,7 +129,7 @@ void ICMP::processMulticastFrame(void *_packet) {
 	Stack::ipToString(source, srcIpStr, 16);
 #endif
 #if LOG_RECEIVED_PACKETS
-	LOG(S_DEBUG, "Received ICMP frame with type %u from %s", packet->type, srcIpStr);
+	LOG(S_DEBUG, "Received broadcast ICMP frame with type %u from %s", packet->type, srcIpStr);
 #endif
 
 	// this message struct is used if we need to act on the message
@@ -137,7 +137,42 @@ void ICMP::processMulticastFrame(void *_packet) {
 	msg.source = source;
 
 	// handle packet
-	this->processPacket(packet, &msg, rx);
+	this->processPacket(packet, &msg, rx, MULTICAST);
+
+	// release the packet
+	this->ipv4->releaseRxBuffer(rx);
+}
+
+/**
+ * Processes a received broadcast frame.
+ *
+ * @param _packet Pointer to receive buffer
+ */
+void ICMP::processBroadcastFrame(void *_packet) {
+	stack_ipv4_rx_packet_t *rx = (stack_ipv4_rx_packet_t *) _packet;
+
+	// get the packet and convert byte order
+	icmp_packet_ipv4_t *packet = (icmp_packet_ipv4_t *) rx->payload;
+	this->packetNetworkToHost(packet);
+
+	// get the source address
+	stack_ipv4_addr_t source = this->ipv4->getRxBufferSource(rx);
+
+	// do some logging
+#if LOG_RECEIVED_PINGS || LOG_RECEIVED_PACKETS
+	char srcIpStr[16];
+	Stack::ipToString(source, srcIpStr, 16);
+#endif
+#if LOG_RECEIVED_PACKETS
+	LOG(S_DEBUG, "Received broadcast ICMP frame with type %u from %s", packet->type, srcIpStr);
+#endif
+
+	// this message struct is used if we need to act on the message
+	icmp_task_message_t msg;
+	msg.source = source;
+
+	// handle packet
+	this->processPacket(packet, &msg, rx, BROADCAST);
 
 	// release the packet
 	this->ipv4->releaseRxBuffer(rx);
@@ -149,12 +184,13 @@ void ICMP::processMulticastFrame(void *_packet) {
  * @param _packet ICMP packet
  * @param _msg Message buffer
  * @param rx IPv4 receive buffer
+ * @param type Whether the frame was unicast, multicast, or broadcast.
  */
-void ICMP::processPacket(void *_packet, void *_msg, void *rx) {
+void ICMP::processPacket(void *_packet, void *_msg, void *rx, int type) {
 	icmp_packet_ipv4_t *packet = (icmp_packet_ipv4_t *) _packet;
 	icmp_task_message_t *msg = (icmp_task_message_t *) _msg;
 
-	// is it an echo request?
+	// is it an echo request? (ok for all types)
 	if(packet->type == kCIMPTypeEchoRequest) {
 #if LOG_RECEIVED_PINGS
 		LOG(S_DEBUG, "Received echo request from %s", srcIpStr);
@@ -162,6 +198,7 @@ void ICMP::processPacket(void *_packet, void *_msg, void *rx) {
 
 		// generate a response if enabled
 		if(this->respondToEchoRequests) {
+			// fill in more message data
 			msg->type = kICMPMessageSendEchoReply;
 
 			msg->data.echoRequest.identifier = packet->data.echoRequest.identifier;
@@ -198,6 +235,11 @@ void ICMP::processPacket(void *_packet, void *_msg, void *rx) {
 
 				// deallocate the buffer we allocated earlier
 				vPortFree(msg->data.echoRequest.additionalData);
+			} else {
+				// increment counters
+				if(type == UNICAST) this->receivedUnicastPings++;
+				else if(type == MULTICAST) this->receivedMulticastPings++;
+				else if(type == BROADCAST) this->receivedBroadcastPings++;
 			}
 		}
 	}

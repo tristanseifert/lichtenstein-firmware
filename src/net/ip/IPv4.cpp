@@ -136,7 +136,10 @@ void IPv4::handleIPv4Frame(void *_packet) {
 
 		// call into the appropriate protocol handler
 		switch(rx->ipv4Header->protocol) {
-			// TODO: broadcasted ICMP
+			// handle broadcasted ICMP
+			case kIPv4ProtocolICMP:
+				this->icmp->processBroadcastFrame(rx);
+				break;
 
 			// handle broadcasted UDP
 			case kIPv4ProtocolUDP:

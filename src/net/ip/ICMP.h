@@ -31,10 +31,17 @@ namespace ip {
 
 		// API for the IPv4 handler to call into
 		public:
+			enum {
+				UNICAST,
+				MULTICAST,
+				BROADCAST
+			};
+
 			void processUnicastFrame(void *);
 			void processMulticastFrame(void *);
+			void processBroadcastFrame(void *);
 
-			void processPacket(void *, void *, void *);
+			void processPacket(void *, void *, void *, int);
 
 		// byte order conversion helpers
 		private:
@@ -76,6 +83,11 @@ namespace ip {
 		private:
 			Stack *stack = nullptr;
 			IPv4 *ipv4 = nullptr;
+
+		private:
+			uint32_t receivedUnicastPings = 0;
+			uint32_t receivedMulticastPings = 0;
+			uint32_t receivedBroadcastPings = 0;
 	};
 
 } /* namespace ip */
