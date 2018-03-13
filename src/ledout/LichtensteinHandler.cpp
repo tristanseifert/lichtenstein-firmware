@@ -35,6 +35,8 @@
 // set to use hardware CRC calculation
 #define USE_HARDWARE_CRC					0
 
+// log received packets
+#define LOG_RECEIVED_PACKETS				0
 // produce logging when the adoption state changes
 #define LOG_ADOPTION						1
 
@@ -242,7 +244,8 @@ void LichtensteinHandler::taskEntry() {
 			// if the checksum was invalid, increment the counter
 			this->invalidCRCErrors++;
 
-			LOG(S_INFO, "Discarded packet with invalid checksum");
+			LOG(S_INFO, "Discarded packet with invalid checksum (0x%08x, expected 0x%08x)",
+					__builtin_bswap32(hdr->checksum), crc);
 
 			goto doneProcessing;
 		}
@@ -250,10 +253,18 @@ void LichtensteinHandler::taskEntry() {
 		// byteswap all fields in the packet
 		err = this->packetNetworkToHost(buffer, bytesRead);
 
+#if LOG_RECEIVED_PACKETS
 		LOG(S_DEBUG, "Received %u bytes", bytesRead);
+#endif
 
 		if(err != 0) {
 			LOG(S_INFO, "Couldn't byteswap packet (%u bytes)", bytesRead);
+			goto doneProcessing;
+		}
+
+		// make sure that the magic matches
+		if(hdr->magic != kLichtensteinMagic) {
+			LOG(S_INFO, "Invalid magic: 0x%08x", hdr->magic);
 			goto doneProcessing;
 		}
 
@@ -270,6 +281,11 @@ void LichtensteinHandler::taskEntry() {
 
 			// framebuffer data received
 			case kOpcodeFramebufferData: {
+				// ignore if not adopted
+				if(!this->isAdopted) {
+					goto doneProcessing;
+				}
+
 				// reset the abandonment timer
 				if(this->abandonTimer) {
 					xTimerReset(this->abandonTimer, portMAX_DELAY);
@@ -283,6 +299,11 @@ void LichtensteinHandler::taskEntry() {
 			}
 			// output a particular channel
 			case kOpcodeSyncOutput: {
+				// ignore if not adopted
+				if(!this->isAdopted) {
+					goto doneProcessing;
+				}
+
 				// reset the abandonment timer
 				if(this->abandonTimer) {
 					xTimerReset(this->abandonTimer, portMAX_DELAY);
@@ -741,13 +762,12 @@ void LichtensteinHandler::populateLichtensteinHeader(lichtenstein_header_t *head
  * @return CRC32 to insert into the packet
  */
 uint32_t LichtensteinHandler::calculatePacketCRC(lichtenstein_header_t *header, size_t length) {
-	// extract some header info
-	size_t payloadLen = __builtin_bswap32(header->payloadLength);
-
 	// get CRC offset into the packet
 	size_t offset = offsetof(lichtenstein_header_t, opcode);
 	void *ptr = ((uint8_t *) header) + offset;
 	size_t len = (length - offset);
+
+//	LOG(S_DEBUG, "Checksum over %u bytes of packet: checksumming %u bytes", length, len);
 
 	// calculate CRC
 #if USE_HARDWARE_CRC

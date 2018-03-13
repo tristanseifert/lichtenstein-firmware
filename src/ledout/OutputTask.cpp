@@ -44,7 +44,7 @@ void OutputFPSTimerCallback(TimerHandle_t timer) {
 	OutputTask *task = static_cast<OutputTask *>(ctx);
 
 	// ~ do stuff ~
-//	LOG(S_INFO, "FPS: %d %d %d %d", task->fpsCounter[0], task->fpsCounter[1], task->fpsCounter[2], task->fpsCounter[3]);
+	LOG(S_INFO, "FPS: %d %d", task->fpsCounter[0], task->fpsCounter[1]);
 
 	// clear the counters back to zero
 	for(int i = 0; i < OutputTask::maxOutputBuffers; i++) {
@@ -194,6 +194,15 @@ void OutputTask::taskConvertBuffer(output_message_t *msg) {
 	if(msg->callback != nullptr) {
 		msg->callback(msg->cbContext1, msg->cbContext2);
 	}
+
+	// XXX: perform output
+	unsigned int i = msg->channel;
+
+	Output::sharedInstance()->outputData(i, this->outputBuffer[i],
+			this->outputBufferBytesWritten[i]);
+
+	// increment frame counter
+	this->fpsCounter[i]++;
 }
 
 /**

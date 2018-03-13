@@ -38,8 +38,8 @@ SemaphoreHandle_t gBufferMutex = nullptr;
 #define USE_UART							1
 
 #if HW == HW_MUSTARD
-// baud rate of the logging UART (115200/230400/460800/614400/921600)
-#define LOG_UART_BAUD						921600
+// baud rate of the logging UART (115200/230400/460800/614400/921600/1228800)
+#define LOG_UART_BAUD						2000000
 // UART peripheral to use for logging
 #define LOG_UART							USART2
 // clock for the UART peripheral
