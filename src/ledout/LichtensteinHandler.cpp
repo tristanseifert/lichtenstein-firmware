@@ -259,6 +259,15 @@ void LichtensteinHandler::taskEntry() {
 
 		// handle packet based on the opcode
 		switch(hdr->opcode) {
+			// adoption
+			case kOpcodeNodeAdoption: {
+				lichtenstein_node_adoption_t *adopt;
+				adopt = (lichtenstein_node_adoption_t *) buffer;
+
+				releasePacket = this->taskHandleAdoption(adopt);
+				break;
+			}
+
 			// framebuffer data received
 			case kOpcodeFramebufferData: {
 				// reset the abandonment timer
@@ -923,6 +932,7 @@ int LichtensteinHandler::convertPacketByteOrder(void *_packet, bool fromNetworkO
 
 			// byteswap regular fields
 			adopt->port = __builtin_bswap16(adopt->port);
+			adopt->flags = __builtin_bswap16(adopt->flags);
 
 			if(fromNetworkOrder) {
 				adopt->numChannels = __builtin_bswap32(adopt->numChannels);
