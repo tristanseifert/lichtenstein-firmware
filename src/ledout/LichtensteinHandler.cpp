@@ -409,7 +409,9 @@ bool LichtensteinHandler::taskHandleSyncOut(lichtenstein_sync_output_t *packet) 
 
 	// fill in type, channel
 	msg.type = kOutputMessageSend;
-	msg.channel = packet->channel;
+	msg.channel = 0;
+
+	msg.payload.send.channelBitmask = packet->channel;
 
 	// send it
 	err = Output::sharedInstance()->task->sendMessage(&msg);

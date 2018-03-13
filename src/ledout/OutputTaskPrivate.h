@@ -49,7 +49,8 @@ typedef struct {
 
 		// sending of converted data
 		struct {
-
+			// bitmask of channels to output (LSB = channel 0)
+			unsigned int channelBitmask;
 		} send;
 	} payload;
 

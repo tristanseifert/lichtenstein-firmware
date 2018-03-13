@@ -194,15 +194,6 @@ void OutputTask::taskConvertBuffer(output_message_t *msg) {
 	if(msg->callback != nullptr) {
 		msg->callback(msg->cbContext1, msg->cbContext2);
 	}
-
-	// XXX: perform output
-	unsigned int i = msg->channel;
-
-	Output::sharedInstance()->outputData(i, this->outputBuffer[i],
-			this->outputBufferBytesWritten[i]);
-
-	// increment frame counter
-	this->fpsCounter[i]++;
 }
 
 /**
@@ -211,14 +202,22 @@ void OutputTask::taskConvertBuffer(output_message_t *msg) {
  * @param msg Received message
  */
 void OutputTask::taskSendBuffer(output_message_t *msg) {
-	unsigned int i = msg->channel;
+	uint32_t bitmask = msg->payload.send.channelBitmask;
 
-	// perform output
-	Output::sharedInstance()->outputData(i, this->outputBuffer[i],
-			this->outputBufferBytesWritten[i]);
+	// check each channel's bits
+	for(size_t i = 0; i < OutputTask::maxOutputBuffers; i++) {
+		// bitmask to check with
+		uint32_t mask = (1 << i);
 
-	// increment frame counter
-	this->fpsCounter[i]++;
+		if((bitmask & mask) != 0) {
+			// output this channel
+			Output::sharedInstance()->outputData(i, this->outputBuffer[i],
+					this->outputBufferBytesWritten[i]);
+
+			// increment frame counter
+			this->fpsCounter[i]++;
+		}
+	}
 
 	// run callback if specified
 	if(msg->callback != nullptr) {
