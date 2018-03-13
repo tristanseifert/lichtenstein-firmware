@@ -50,9 +50,11 @@ namespace ledout {
 		private:
 			void convertRGBW(int index, int numPixels, void *bufferPtr);
 
-		private:
+		public:
 			// max number of output buffers we support
 			static const int maxOutputBuffers = 2;
+
+		private:
 			// number of LEDs in each buffer
 			unsigned int ledsPerBuffer[maxOutputBuffers];
 

@@ -9,10 +9,10 @@
 #define OUTPUTTASK_PRIVATE
 
 #include "lichtenstein_proto.h"
+#include "OutputTaskPrivate.h"
 
 #include "LichtensteinHandler.h"
 
-#include "OutputTaskPrivate.h"
 #include "Output.h"
 #include "OutputTask.h"
 
@@ -35,9 +35,27 @@
 // set to use hardware CRC calculation
 #define USE_HARDWARE_CRC					0
 
+// produce logging when the adoption state changes
+#define LOG_ADOPTION						1
+
 
 
 namespace ledout {
+
+/**
+ * Called when the abandonment timer expires. This just calls into the class
+ * method to handle it.
+ *
+ * @param timer Timer that expired
+ */
+void _AbandonTimerCallback(TimerHandle_t timer) {
+	// get the context out of the timer
+	void *ctx = pvTimerGetTimerID(timer);
+	LichtensteinHandler *handler = static_cast<LichtensteinHandler *>(ctx);
+
+	// call the method
+	handler->abandonTimerFired();
+}
 
 /**
  * Called when a buffer has been completed. This will discard the received
@@ -80,7 +98,7 @@ void _DoMulticastAnnouncement(TimerHandle_t timer) {
 	err = handler->postMessageToTask(LichtensteinHandler::kSendMulticastDiscovery);
 
 	if(err != 0) {
-		LOG(S_ERROR, "Couldn't post message to task");
+		LOG(S_ERROR, "Couldn't post message to task: %u", err);
 	}
 
 }
@@ -136,6 +154,9 @@ LichtensteinHandler::LichtensteinHandler() {
 	if(err != 0) {
 		LOG(S_ERROR, "Couldn't post message to task");
 	}
+
+	// clear buffers
+	memset(&this->numOutputLEDs, 0, sizeof(this->numOutputLEDs));
 }
 
 /**
@@ -145,6 +166,10 @@ LichtensteinHandler::~LichtensteinHandler() {
 	// delete discovery timer
 	if(this->discoveryTimer) {
 		xTimerDelete(this->discoveryTimer, portMAX_DELAY);
+	}
+	// delete abandonment timer
+	if(this->abandonTimer) {
+		xTimerDelete(this->abandonTimer, portMAX_DELAY);
 	}
 
 	// delete task and queue
@@ -181,6 +206,8 @@ void LichtensteinHandler::taskEntry() {
 	message_type_t msg;
 	lichtenstein_header_t *hdr;
 
+	uint32_t crc;
+
 	bool releasePacket = true;
 
 	// set up the socket
@@ -206,8 +233,21 @@ void LichtensteinHandler::taskEntry() {
 
 
 
-		// byteswap all fields in the packet
+		// check CRC of packet
 		hdr = (lichtenstein_header_t *) buffer;
+
+		crc = this->calculatePacketCRC(hdr, bytesRead);
+
+		if(crc != __builtin_bswap32(hdr->checksum)) {
+			// if the checksum was invalid, increment the counter
+			this->invalidCRCErrors++;
+
+			LOG(S_INFO, "Discarded packet with invalid checksum");
+
+			goto doneProcessing;
+		}
+
+		// byteswap all fields in the packet
 		err = this->packetNetworkToHost(buffer, bytesRead);
 
 		LOG(S_DEBUG, "Received %u bytes", bytesRead);
@@ -221,6 +261,11 @@ void LichtensteinHandler::taskEntry() {
 		switch(hdr->opcode) {
 			// framebuffer data received
 			case kOpcodeFramebufferData: {
+				// reset the abandonment timer
+				if(this->abandonTimer) {
+					xTimerReset(this->abandonTimer, portMAX_DELAY);
+				}
+
 				lichtenstein_framebuffer_data_t *fb;
 				fb = (lichtenstein_framebuffer_data_t *) buffer;
 
@@ -229,12 +274,21 @@ void LichtensteinHandler::taskEntry() {
 			}
 			// output a particular channel
 			case kOpcodeSyncOutput: {
+				// reset the abandonment timer
+				if(this->abandonTimer) {
+					xTimerReset(this->abandonTimer, portMAX_DELAY);
+				}
+
 				lichtenstein_sync_output_t *sync;
 				sync = (lichtenstein_sync_output_t *) buffer;
 
 				releasePacket = this->taskHandleSyncOut(sync);
 				break;
 			}
+
+			// ignored opcodes
+			case kOpcodeNodeAnnouncement:
+				break;
 
 			// unknown opcode (should never happen)
 			default: {
@@ -341,6 +395,104 @@ bool LichtensteinHandler::taskHandleSyncOut(lichtenstein_sync_output_t *packet) 
 
 
 /**
+ * Handles a received node adoption packet.
+ *
+ * @param packet Location of the received packet
+ *
+ * @return true if the packet should be released, false otherwise.
+ */
+bool LichtensteinHandler::taskHandleAdoption(lichtenstein_node_adoption_t *packet) {
+	int err;
+
+	// return if this node is already adopted
+	if(this->isAdopted) {
+		return true;
+	}
+
+	// since we received this frame, we've been adopted
+	this->isAdopted = true;
+
+	// copy the server's IP and port
+	this->serverAddr = (stack_ipv4_addr_t) packet->ip;
+	this->serverPort = packet->port;
+
+	// process flags
+
+	// copy the number of LEDs per channel
+	for(size_t i = 0; i < packet->numChannels; i++) {
+		this->numOutputLEDs[i] = packet->pixelsPerChannel[i];
+	}
+
+	// acknowledge packet
+	err = this->ackPacket(&packet->header);
+
+	if(err != 0) {
+		LOG(S_ERROR, "Couldn't acknowledge adoption: %d", err);
+	}
+
+	// stop the discovery timer
+	xTimerStop(this->discoveryTimer, portMAX_DELAY);
+
+	// create abandonment timer
+	if(this->abandonTimer) {
+		// delete old timer if it exists
+		xTimerDelete(this->abandonTimer, portMAX_DELAY);
+		this->abandonTimer = nullptr;
+	}
+
+	this->abandonTimer = xTimerCreate("AdoptAbandon",
+			LichtensteinHandler::AdoptionAbandonPeriod, false,
+			this, _AbandonTimerCallback);
+
+	if(this->abandonTimer == nullptr) {
+		LOG(S_ERROR, "Couldn't create abandonment timer");
+	}
+
+	xTimerStart(this->abandonTimer, portMAX_DELAY);
+
+	// logging
+#if LOG_ADOPTION
+	char ipStr[16];
+	ip::Stack::ipToString(this->serverAddr, ipStr, 16);
+	LOG(S_INFO, "Adopted by %s:%u", ipStr, this->serverPort);
+#endif
+
+	// always release the packet
+	return true;
+}
+
+/**
+ * Called when the abandonment timer fires. This fires five minutes after the
+ * last reception of an unicast packet.
+ */
+void LichtensteinHandler::abandonTimerFired(void) {
+	int err;
+
+#if LOG_ADOPTION
+	LOG(S_WARN, "Abandonment timer fired, resuming multicast discovery");
+#endif
+
+	// immediately send a discovery message
+	err = this->postMessageToTask(LichtensteinHandler::kSendMulticastDiscovery);
+
+	if(err != 0) {
+		LOG(S_ERROR, "Couldn't post message to task: %u", err);
+	}
+
+	// re-start the discovery timer
+	xTimerReset(this->discoveryTimer, portMAX_DELAY);
+	xTimerStart(this->discoveryTimer, portMAX_DELAY);
+
+	// clear adoption flag and server information
+	this->isAdopted = false;
+
+	this->serverAddr = kIPv4AddressZero;
+	this->serverPort = 0;
+}
+
+
+
+/**
  * Acknowledges the given packet, if required.
  *
  * @param header Header of the packet, in host byte order
@@ -352,13 +504,16 @@ int LichtensteinHandler::ackPacket(lichtenstein_header_t *header, bool nack) {
 	int err;
 	void *buffer;
 
-	// TODO: test this
-	return 0;
-
 	// return if the packet doesn't require an ack
 	if(header->opcode != kOpcodeFramebufferData
 			&& header->opcode == kOpcodeSyncOutput) {
 		return -1;
+	}
+
+	// return if the IP is zero
+	if(this->isAdopted == false) {
+		LOG(S_ERROR, "Can't acknowledge packet if not adopted");
+		return -2;
 	}
 
 	// get a TX buffer
@@ -376,10 +531,14 @@ int LichtensteinHandler::ackPacket(lichtenstein_header_t *header, bool nack) {
 	// populate header
 	lichtenstein_header_t *packet = (lichtenstein_header_t *) buffer;
 
-	packet->payloadLength = 0;
-	packet->flags |= nack ? kFlagNAck : kFlagAck;
-
 	this->populateLichtensteinHeader(packet, header->opcode);
+
+	packet->txn = header->txn;
+
+	packet->payloadLength = 0;
+
+	packet->flags |= kFlagChecksummed;
+	packet->flags |= nack ? kFlagNAck : kFlagAck;
 
 	// byteswap and insert checksum
 	this->packetHostToNetwork(packet, bytes);
@@ -388,8 +547,7 @@ int LichtensteinHandler::ackPacket(lichtenstein_header_t *header, bool nack) {
 	packet->checksum = __builtin_bswap32(packet->checksum);
 
 	// transmit the packet
-	err = this->sock->sendTo(buffer, this->serverAddr,
-			LichtensteinHandler::Port);
+	err = this->sock->sendTo(buffer, this->serverAddr, this->serverPort);
 
 	if(err != ip::Socket::ErrSuccess) {
 		LOG(S_ERROR, "Couldn't send ack: %d", err);
@@ -627,8 +785,14 @@ int LichtensteinHandler::convertPacketByteOrder(void *_packet, bool fromNetworkO
 	header->txn = __builtin_bswap32(header->txn);
 	header->payloadLength = __builtin_bswap32(header->payloadLength);
 
+	// return immediately if payload length is zero (its a request)
+	if(header->payloadLength == 0) {
+		return 0;
+	}
+
 	// handle each packet type individually
 	switch(opcode) {
+		// node announcement
 		case kOpcodeNodeAnnouncement: {
 			// ensure the length is correct
 			if(length < sizeof(lichtenstein_node_announcement_t)) {
@@ -656,6 +820,65 @@ int LichtensteinHandler::convertPacketByteOrder(void *_packet, bool fromNetworkO
 			announce->hostnameLen = __builtin_bswap16(announce->hostnameLen);
 			break;
 		}
+		// server announcement
+		case kOpcodeServerAnnouncement: {
+			// ensure the length is correct
+			if(length < sizeof(lichtenstein_server_announcement_t)) {
+				return -1;
+			}
+
+			lichtenstein_server_announcement_t *announce;
+			announce = (lichtenstein_server_announcement_t *) _packet;
+
+			// byteswap all fields
+			announce->swVersion = __builtin_bswap32(announce->swVersion);
+			announce->capabilities = __builtin_bswap32(announce->capabilities);
+
+			announce->port = __builtin_bswap16(announce->port);
+			announce->hostnameLen = __builtin_bswap16(announce->hostnameLen);
+
+			break;
+		}
+
+		// node status
+		case kOpcodeNodeStatusReq: {
+			// ensure the length is correct
+			if(length < sizeof(lichtenstein_node_status_t)) {
+				return -1;
+			}
+
+			lichtenstein_node_status_t *status;
+			status = (lichtenstein_node_status_t *) _packet;
+
+			// byteswap all fields
+			status->uptime = __builtin_bswap32(status->uptime);
+
+			status->totalMem = __builtin_bswap32(status->totalMem);
+			status->freeMem = __builtin_bswap32(status->freeMem);
+
+			status->rxPackets = __builtin_bswap32(status->rxPackets);
+			status->txPackets = __builtin_bswap32(status->txPackets);
+			status->packetsWithInvalidCRC = __builtin_bswap32(status->packetsWithInvalidCRC);
+
+			status->framesOutput = __builtin_bswap32(status->framesOutput);
+
+			status->outputState = __builtin_bswap16(status->outputState);
+			status->cpuUsagePercent = __builtin_bswap16(status->cpuUsagePercent);
+
+			status->avgConversionTimeUs = __builtin_bswap32(status->avgConversionTimeUs);
+
+			status->rxBytes = __builtin_bswap32(status->rxBytes);
+			status->txBytes = __builtin_bswap32(status->txBytes);
+
+			status->rxSymbolErrors = __builtin_bswap32(status->rxSymbolErrors);
+
+			status->mediumSpeed = __builtin_bswap32(status->mediumSpeed);
+			status->mediumDuplex = __builtin_bswap32(status->mediumDuplex);
+
+			break;
+		}
+
+
 		// framebuffer data
 		case kOpcodeFramebufferData: {
 			// ensure the length is correct
@@ -683,6 +906,50 @@ int LichtensteinHandler::convertPacketByteOrder(void *_packet, bool fromNetworkO
 			out = (lichtenstein_sync_output_t *) _packet;
 
 			out->channel = __builtin_bswap32(out->channel);
+			break;
+		}
+
+		// node adoption
+		case kOpcodeNodeAdoption: {
+			size_t numChannels = 0;
+
+			// ensure the length is correct
+			if(length < sizeof(lichtenstein_node_adoption_t)) {
+				return -1;
+			}
+
+			lichtenstein_node_adoption_t *adopt;
+			adopt = (lichtenstein_node_adoption_t *) _packet;
+
+			// byteswap regular fields
+			adopt->port = __builtin_bswap16(adopt->port);
+
+			if(fromNetworkOrder) {
+				adopt->numChannels = __builtin_bswap32(adopt->numChannels);
+				numChannels = adopt->numChannels;
+			} else {
+				numChannels = adopt->numChannels;
+				adopt->numChannels = __builtin_bswap32(adopt->numChannels);
+			}
+
+			// byteswap the pixels per channel array
+			for(size_t i = 0; i < numChannels; i++) {
+				adopt->pixelsPerChannel[i] = __builtin_bswap32(adopt->pixelsPerChannel[i]);
+			}
+
+			break;
+		}
+
+		// reconfig
+		case kOpcodeNodeReconfig: {
+			// ensure the length is correct
+			if(length < sizeof(lichtenstein_node_adoption_t)) {
+				return -1;
+			}
+
+			lichtenstein_reconfig_t *adopt;
+			adopt = (lichtenstein_reconfig_t *) _packet;
+
 			break;
 		}
 

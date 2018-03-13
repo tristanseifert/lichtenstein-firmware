@@ -14,6 +14,11 @@
 
 #include "StackTypes.h"
 
+
+
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wpadded"
+
 namespace ip {
 	class Stack;
 	class UDPSocket;
@@ -153,5 +158,7 @@ namespace ip {
 	};
 
 } /* namespace ip */
+
+#pragma GCC diagnostic pop
 
 #endif /* NET_IP_DHCPCLIENT_H_ */
