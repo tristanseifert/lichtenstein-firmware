@@ -139,11 +139,15 @@ void OutputTask::taskEntry(void) noexcept {
 
 	// clear the buffer (fill with all zeroes) and output it
 	for(int i = 0; i < numOutputChannels; i++) {
-		this->clearBuffer(i, (outputBufSz - 1));
+		rgbw_pixel_t black = {.r = 0, .g = 0, .b = 0, .w = 0};
+		this->clearBuffer(i, ledsPerChannel, black);
 
 		Output::sharedInstance()->outputData(i, this->outputBuffer[i],
 				this->outputBufferBytesWritten[i]);
 	}
+
+	// test all LEDs
+	this->taskDoLEDTest();
 
 	// process messages in here
 	while(1) {
@@ -173,6 +177,44 @@ void OutputTask::taskEntry(void) noexcept {
 				break;
 		}
 	}
+}
+
+/**
+ * Performs a test of all LEDs.
+ */
+void OutputTask::taskDoLEDTest(void) {
+	LOG(S_INFO, "Performing LED test");
+
+	// colors to use for the test
+	const size_t numTestColors = 5;
+
+	const rgbw_pixel_t testColors[numTestColors] = {
+		// red
+		{.r = 0xFF, .g = 0x00, .b = 0x00, .w = 0x00},
+		// green
+		{.r = 0x00, .g = 0xFF, .b = 0x00, .w = 0x00},
+		// blue
+		{.r = 0x00, .g = 0x00, .b = 0xFF, .w = 0x00},
+		// white
+		{.r = 0x00, .g = 0x00, .b = 0x00, .w = 0xFF},
+		// off
+		{.r = 0x00, .g = 0x00, .b = 0x00, .w = 0x00},
+	};
+
+	// do the test
+	for(size_t i = 0; i < numTestColors; i++) {
+		// iterate over each output channel
+		for(int j = 0; j < numOutputChannels; j++) {
+			this->clearBuffer(j, ledsPerChannel, testColors[i]);
+
+			Output::sharedInstance()->outputData(j, this->outputBuffer[j],
+					this->outputBufferBytesWritten[j]);
+		}
+
+		// wait for a while
+		vTaskDelay(1000 / portTICK_PERIOD_MS);
+	}
+
 }
 
 /**
@@ -322,8 +364,8 @@ void OutputTask::convertRGBW(int index, int pixels, void *bufferPtr) {
  * This does basically the same as the function above, except that it simply
  * fills the buffer with all 0 symbols.
  */
-void OutputTask::clearBuffer(size_t index, size_t numBytes) {
-	uint8_t *buf = (this->outputBuffer[index]); // first byte is zero
+void OutputTask::clearBuffer(size_t index, size_t numPixels, const rgbw_pixel_t &pixel) {
+	uint8_t *buf = (this->outputBuffer[index]);
 
 	// keep track of how many bytes we write
 	uint8_t *bufStart = buf;
@@ -332,16 +374,34 @@ void OutputTask::clearBuffer(size_t index, size_t numBytes) {
 	// first byte is zero
 	*buf++ = 0x00;
 
-	// get the bit pattern for a zero byte
-	const uint32_t patternData = bitPatternLut[0x00];
-	const uint8_t *pattern = reinterpret_cast<const uint8_t *>(&patternData);
-
 	// output data for each LED
-	for(size_t i = 0; i < (numBytes - 2); i += 3) {
-		// copy the bytes in REVERSE order because ARM is little endian
-		*buf++ = pattern[2];
-		*buf++ = pattern[1];
-		*buf++ = pattern[0];
+	for(size_t i = 0; i < numPixels; i++) {
+		// read each color in the pixel
+		for(int j = 0; j < 4; j++) {
+			/*
+			 * Copy the bytes in kind of a whacky order. The hardware is
+			 * designed for the SK6812RGBW LEDs - the datasheets online seem
+			 * to be incorrect about the order of the bytes. The plain SK6812
+			 * takes data in GRB order (wtf) and it seems like the SK6812RGBW
+			 * take it in GRBW order rather than RGBW as the datasheets say,
+			 * so we do a bit of swapping here to make it work.
+			 */
+			uint8_t byte = 0x00;
+
+			if(j == 0) byte = pixel.g;
+			else if(j == 1) byte = pixel.r;
+			else if(j == 2) byte = pixel.b;
+			else if(j == 3) byte = pixel.w;
+
+			// TODO: cleaner way of doing this?
+			uint32_t patternData = bitPatternLut[byte];
+			uint8_t *pattern = reinterpret_cast<uint8_t *>(&patternData);
+
+			// copy the bytes in REVERSE order because ARM is little endian
+			*buf++ = pattern[2];
+			*buf++ = pattern[1];
+			*buf++ = pattern[0];
+		}
 	}
 
 	// write zero byte at the end

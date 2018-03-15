@@ -387,8 +387,6 @@
                         					
                     </folderInfo>
                     					
-                    <fileInfo id="ilg.gnuarmeclipse.managedbuild.cross.config.elf.debug.51379113.1359283062" name="Makefile" rcbsApplicability="disable" resourcePath="lib/pcg-cpp/Makefile" toolsToInvoke=""/>
-                    					
                     <fileInfo id="ilg.gnuarmeclipse.managedbuild.cross.config.elf.debug.51379113.140777170" name="Makefile" rcbsApplicability="disable" resourcePath="lib/mini-printf/Makefile" toolsToInvoke=""/>
                     					
                     <folderInfo id="ilg.gnuarmeclipse.managedbuild.cross.config.elf.debug.51379113.1602605765" name="/" resourcePath="lib/spiffs/src">
@@ -587,6 +585,8 @@
                             							
                             <option id="ilg.gnuarmeclipse.managedbuild.cross.option.command.rm.1999713731.1393716707" name="Remove command" superClass="ilg.gnuarmeclipse.managedbuild.cross.option.command.rm.1999713731"/>
                             							
+                            <targetPlatform archList="all" binaryParser="org.eclipse.cdt.core.ELF" id="ilg.gnuarmeclipse.managedbuild.cross.targetPlatform" isAbstract="false" osList="all" superClass="ilg.gnuarmeclipse.managedbuild.cross.targetPlatform"/>
+                            							
                             <tool id="ilg.gnuarmeclipse.managedbuild.cross.tool.assembler.319621973" name="GNU ARM Cross Assembler" superClass="ilg.gnuarmeclipse.managedbuild.cross.tool.assembler.1154143961">
                                 								
                                 <inputType id="ilg.gnuarmeclipse.managedbuild.cross.tool.assembler.input.1230823673" superClass="ilg.gnuarmeclipse.managedbuild.cross.tool.assembler.input"/>
@@ -595,7 +595,7 @@
                             							
                             <tool id="ilg.gnuarmeclipse.managedbuild.cross.tool.c.compiler.861335868" name="GNU ARM Cross C Compiler" superClass="ilg.gnuarmeclipse.managedbuild.cross.tool.c.compiler.1647717787">
                                 								
-                                <option id="ilg.gnuarmeclipse.managedbuild.cross.option.c.compiler.otherwarnings.2143740884" superClass="ilg.gnuarmeclipse.managedbuild.cross.option.c.compiler.otherwarnings" useByScannerDiscovery="true" value="-Wno-multichar -Wno-padded" valueType="string"/>
+                                <option id="ilg.gnuarmeclipse.managedbuild.cross.option.c.compiler.otherwarnings.2143740884" name="Other warning flags" superClass="ilg.gnuarmeclipse.managedbuild.cross.option.c.compiler.otherwarnings" useByScannerDiscovery="true" value="-Wno-multichar -Wno-padded" valueType="string"/>
                                 								
                                 <inputType id="ilg.gnuarmeclipse.managedbuild.cross.tool.c.compiler.input.1384905785" superClass="ilg.gnuarmeclipse.managedbuild.cross.tool.c.compiler.input"/>
                                 							
@@ -603,7 +603,7 @@
                             							
                             <tool id="ilg.gnuarmeclipse.managedbuild.cross.tool.cpp.compiler.2003154086" name="GNU ARM Cross C++ Compiler" superClass="ilg.gnuarmeclipse.managedbuild.cross.tool.cpp.compiler.1892927533">
                                 								
-                                <option id="ilg.gnuarmeclipse.managedbuild.cross.option.cpp.compiler.otherwarnings.993779955" superClass="ilg.gnuarmeclipse.managedbuild.cross.option.cpp.compiler.otherwarnings" useByScannerDiscovery="true" value=" -Wno-padded" valueType="string"/>
+                                <option id="ilg.gnuarmeclipse.managedbuild.cross.option.cpp.compiler.otherwarnings.993779955" name="Other warning flags" superClass="ilg.gnuarmeclipse.managedbuild.cross.option.cpp.compiler.otherwarnings" useByScannerDiscovery="true" value=" -Wno-padded" valueType="string"/>
                                 								
                                 <inputType id="ilg.gnuarmeclipse.managedbuild.cross.tool.cpp.compiler.input.362012139" superClass="ilg.gnuarmeclipse.managedbuild.cross.tool.cpp.compiler.input"/>
                                 							
@@ -1077,8 +1077,6 @@
                         					
                     </fileInfo>
                     					
-                    <fileInfo id="ilg.gnuarmeclipse.managedbuild.cross.config.elf.release.1787883260.338374235" name="Makefile" rcbsApplicability="disable" resourcePath="lib/pcg-cpp/Makefile" toolsToInvoke=""/>
-                    					
                     <fileInfo id="ilg.gnuarmeclipse.managedbuild.cross.config.elf.release.1787883260.1367857453" name="Makefile" rcbsApplicability="disable" resourcePath="lib/mini-printf/Makefile" toolsToInvoke=""/>
                     					
                     <folderInfo id="ilg.gnuarmeclipse.managedbuild.cross.config.elf.release.1787883260.328051317" name="/" resourcePath="src/FreeRTOS">
@@ -1157,6 +1155,8 @@
                             							
                             <option id="ilg.gnuarmeclipse.managedbuild.cross.option.command.rm.461931076.1823748658" name="Remove command" superClass="ilg.gnuarmeclipse.managedbuild.cross.option.command.rm.461931076"/>
                             							
+                            <targetPlatform archList="all" binaryParser="org.eclipse.cdt.core.ELF" id="ilg.gnuarmeclipse.managedbuild.cross.targetPlatform" isAbstract="false" osList="all" superClass="ilg.gnuarmeclipse.managedbuild.cross.targetPlatform"/>
+                            							
                             <tool id="ilg.gnuarmeclipse.managedbuild.cross.tool.assembler.1895506976" name="GNU ARM Cross Assembler" superClass="ilg.gnuarmeclipse.managedbuild.cross.tool.assembler.816676548">
                                 								
                                 <inputType id="ilg.gnuarmeclipse.managedbuild.cross.tool.assembler.input.23776326" superClass="ilg.gnuarmeclipse.managedbuild.cross.tool.assembler.input"/>
@@ -1165,7 +1165,7 @@
                             							
                             <tool id="ilg.gnuarmeclipse.managedbuild.cross.tool.c.compiler.898721526" name="GNU ARM Cross C Compiler" superClass="ilg.gnuarmeclipse.managedbuild.cross.tool.c.compiler.1214968186">
                                 								
-                                <option id="ilg.gnuarmeclipse.managedbuild.cross.option.c.compiler.otherwarnings.938347622" superClass="ilg.gnuarmeclipse.managedbuild.cross.option.c.compiler.otherwarnings" value="-Wno-multichar -Wno-padded" valueType="string"/>
+                                <option id="ilg.gnuarmeclipse.managedbuild.cross.option.c.compiler.otherwarnings.938347622" name="Other warning flags" superClass="ilg.gnuarmeclipse.managedbuild.cross.option.c.compiler.otherwarnings" value="-Wno-multichar -Wno-padded" valueType="string"/>
                                 								
                                 <inputType id="ilg.gnuarmeclipse.managedbuild.cross.tool.c.compiler.input.877844521" superClass="ilg.gnuarmeclipse.managedbuild.cross.tool.c.compiler.input"/>
                                 							
@@ -1173,7 +1173,7 @@
                             							
                             <tool id="ilg.gnuarmeclipse.managedbuild.cross.tool.cpp.compiler.172322364" name="GNU ARM Cross C++ Compiler" superClass="ilg.gnuarmeclipse.managedbuild.cross.tool.cpp.compiler.642001651">
                                 								
-                                <option id="ilg.gnuarmeclipse.managedbuild.cross.option.cpp.compiler.otherwarnings.939913932" superClass="ilg.gnuarmeclipse.managedbuild.cross.option.cpp.compiler.otherwarnings" value=" -Wno-padded" valueType="string"/>
+                                <option id="ilg.gnuarmeclipse.managedbuild.cross.option.cpp.compiler.otherwarnings.939913932" name="Other warning flags" superClass="ilg.gnuarmeclipse.managedbuild.cross.option.cpp.compiler.otherwarnings" value=" -Wno-padded" valueType="string"/>
                                 								
                                 <inputType id="ilg.gnuarmeclipse.managedbuild.cross.tool.cpp.compiler.input.153083012" superClass="ilg.gnuarmeclipse.managedbuild.cross.tool.cpp.compiler.input"/>
                                 							

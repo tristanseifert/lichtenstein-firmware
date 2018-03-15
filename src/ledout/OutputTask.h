@@ -37,12 +37,14 @@ namespace ledout {
 		private:
 			friend void _OutputTaskTrampoline(void *);
 
-			void clearBuffer(size_t, size_t);
+			void clearBuffer(size_t, size_t, const rgbw_pixel_t &);
 
 			void taskEntry(void) noexcept;
 
 			void taskConvertBuffer(output_message_t *);
 			void taskSendBuffer(output_message_t *);
+
+			void taskDoLEDTest(void);
 
 		public:
 			int sendMessage(output_message_t *msg, int timeout = portMAX_DELAY);
