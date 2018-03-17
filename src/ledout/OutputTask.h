@@ -68,6 +68,9 @@ namespace ledout {
 			unsigned int fpsCounter[maxOutputBuffers];
 			unsigned int fps[maxOutputBuffers];
 
+			// inhibit output of data received over the network
+			bool inhibitNetworkOutput = false;
+
 		private:
 			friend void OutputFPSTimerCallback(TimerHandle_t);
 

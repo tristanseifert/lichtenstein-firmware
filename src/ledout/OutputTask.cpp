@@ -185,6 +185,9 @@ void OutputTask::taskEntry(void) noexcept {
 void OutputTask::taskDoLEDTest(void) {
 	LOG(S_INFO, "Performing LED test");
 
+	// inhibit network output
+	this->inhibitNetworkOutput = true;
+
 	// colors to use for the test
 	const size_t numTestColors = 5;
 
@@ -215,6 +218,8 @@ void OutputTask::taskDoLEDTest(void) {
 		vTaskDelay(1000 / portTICK_PERIOD_MS);
 	}
 
+	// re-allow outputting data received over the network
+	this->inhibitNetworkOutput = false;
 }
 
 /**
@@ -277,6 +282,18 @@ void OutputTask::taskSendBuffer(output_message_t *msg) {
  */
 int OutputTask::sendMessage(output_message_t *msg, int timeout) {
 	BaseType_t ok;
+
+	// exit if output is inhibited
+	if(this->inhibitNetworkOutput &&
+			(msg->type == kOutputMessageConvert ||
+			 msg->type == kOutputMessageSend)) {
+		// run callback if set
+		if(msg->callback != nullptr) {
+			msg->callback(msg->cbContext1, msg->cbContext2);
+		}
+
+		return 0;
+	}
 
 	// send message
 	ok = xQueueSendToBack(this->messageQueue, msg, timeout);
