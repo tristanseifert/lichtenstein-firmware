@@ -468,7 +468,7 @@ void Network::taskEntry(void) {
 						LOG(S_WARN, "Ethernet reception stopped");
 						this->mac->dbgCheckDMAStatus();
 					} else {
-						LOG(S_WARN, "Exhausted RX buffers");
+//						LOG(S_WARN, "Exhausted RX buffers");
 					}
 
 					// if reception stopped, reset all buffers

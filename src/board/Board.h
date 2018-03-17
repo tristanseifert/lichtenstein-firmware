@@ -49,6 +49,9 @@ class Board {
 
 		uint8_t testSwState = 0;
 
+	private:
+		void initIWDG(void);
+
 	// this has to be public to be callable from the IRQ. do not call elsewhere
 	public:
 		static void TestSwIRQNotify(void) {

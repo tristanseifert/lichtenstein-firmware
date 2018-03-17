@@ -232,6 +232,10 @@ void LichtensteinHandler::taskEntry() {
 
 			goto readMessages;
 		}
+		// did we get a null buffer?
+		else if(buffer == nullptr) {
+			goto readMessages;
+		}
 
 
 

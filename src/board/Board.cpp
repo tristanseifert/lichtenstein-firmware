@@ -114,6 +114,9 @@ Board::Board() {
 	this->initStatusGPIOs();
 	this->initTestGPIOs();
 	this->initConfigEEPROM();
+
+	// set up watchdog
+	this->initIWDG();
 }
 Board::~Board() {
 	// TODO Auto-generated destructor stub
@@ -821,10 +824,26 @@ uint8_t Board::calculateConfigChecksum(board_config_t *cfg) {
 
 #pragma GCC diagnostic pop
 
+
+
+/**
+ * Sets up the watchdog. This is configured to expire after 10 FreeRTOS ticks,
+ * and is reset within the idle task handler.
+ */
+void Board::initIWDG(void) {
+	// unlock writing to watchdog registers
+	IWDG->KR = 0x5555;
+
+	// use /32 prescaler (0.8ms per tick)
+	IWDG->PR = 0b011;
+	IWDG->RLR = (13 * 10); // 13 per FreeRTOS tick
+}
+
 /**
  * Set the idle LED in the idle task hook.
  */
 extern "C" void vApplicationIdleHook(void) {
+	// set idle LED
 	Board::sharedInstance()->setLED(Board::kBoardLEDIdle, true);
 }
 
@@ -832,6 +851,24 @@ extern "C" void vApplicationIdleHook(void) {
  * Clear the idle LED in the tick hook.
  */
 extern "C" void vApplicationTickHook(void) {
+	// start watchdog if needed
+	static bool hasEnabledWatchdog = false;
+
+	if(!hasEnabledWatchdog) {
+		LOG(S_INFO, "Enabling watchdog for 10 tick timeout");
+
+		// start the watchdog
+		IWDG->KR = 0xAAAA;
+		IWDG->KR = 0xCCCC;
+		IWDG->KR = 0xAAAA;
+
+		hasEnabledWatchdog = true;
+	}
+
+	// reset watchdog
+	IWDG->KR = 0xAAAA;
+
+	// clear idle LED
 	Board::sharedInstance()->setLED(Board::kBoardLEDIdle, false);
 }
 
