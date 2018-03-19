@@ -48,8 +48,7 @@ Clock::Clock() {
  */
 void Clock::enableRTCHardware() {
 	// enable power to the RTC
-	RCC_APB1PeriphClockCmd(RCC_APB1Periph_PWR, ENABLE);
-	PWR_BackupAccessCmd(ENABLE);
+	RCC_APB1PeriphClockCmd(RCC_APB1Periph_PWR | RCC_APB1Periph_BKP, ENABLE);
 
 	// set up the clocks for the RTC
 	this->RTCClockConfig();
@@ -59,20 +58,36 @@ void Clock::enableRTCHardware() {
  * Sets up the clocks for the RTC.
  */
 void Clock::RTCClockConfig() {
+	// enable access to config registers
+	while(RTC_GetFlagStatus(RTC_FLAG_RTOFF) == RESET) {}
+	RTC->CRL |= RTC_CRL_CNF;
+
+#if HW == HW_MUSTARD
 	// if we are on the mustard board, we have the LSE oscillator
-	if(HW == HW_MUSTARD) {
+	RCC_LSEConfig(RCC_LSE_ON);
+	// wait for the LSE to be available
+	while(RCC_GetFlagStatus(RCC_FLAG_LSERDY) == RESET) {}
 
-	}
+	// select it as the clock source
+	RCC_RTCCLKConfig(RCC_RTCCLKSource_LSE);
+
+	// set prescaler
+	RTC->PRLH = 0;
+	RTC->PRLL = 0x7FFF;
+#else
 	// otherwise, use the LSI oscillator (ew)
-	else {
-		RCC_LSICmd(ENABLE);
+	RCC_LSICmd(ENABLE);
 
-		// wait for the LSI to be available
-		while(RCC_GetFlagStatus(RCC_FLAG_LSIRDY) == RESET) {}
+	// wait for the LSI to be available
+	while(RCC_GetFlagStatus(RCC_FLAG_LSIRDY) == RESET) {}
 
-		// select it as the clock source
-		RCC_RTCCLKConfig(RCC_RTCCLKSource_LSI);
-	}
+	// select it as the clock source
+	RCC_RTCCLKConfig(RCC_RTCCLKSource_LSI);
+#endif
+
+	// disable access to config registers
+	RTC->CRL &= (uint16_t) ~(RTC_CRL_CNF);
+//	while(RTC_GetFlagStatus(RTC_FLAG_RTOFF) == RESET) {}
 }
 
 /**

@@ -845,6 +845,11 @@ void Board::initIWDG(void) {
 extern "C" void vApplicationIdleHook(void) {
 	// set idle LED
 	Board::sharedInstance()->setLED(Board::kBoardLEDIdle, true);
+
+	// enter sleep mode
+	__asm volatile("dsb"); // ensure there's no outstanding memory accesses
+	__asm volatile("wfi"); // wait for interrupt
+	__asm volatile("isb"); // ensure wfi is executed in order
 }
 
 /**

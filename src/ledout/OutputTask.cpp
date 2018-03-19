@@ -44,7 +44,7 @@ void OutputFPSTimerCallback(TimerHandle_t timer) {
 	OutputTask *task = static_cast<OutputTask *>(ctx);
 
 	// ~ do stuff ~
-	LOG(S_INFO, "FPS: %d %d", task->fpsCounter[0], task->fpsCounter[1]);
+//	LOG(S_INFO, "FPS: %d %d", task->fpsCounter[0], task->fpsCounter[1]);
 
 	// clear the counters back to zero
 	for(int i = 0; i < OutputTask::maxOutputBuffers; i++) {
