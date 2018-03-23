@@ -31,7 +31,7 @@
 // log info about any received DHCP offers
 #define LOG_OFFER							0
 // output logging for messages relating to the DHCP exiprity timer
-#define LOG_RENEWAL_TIMER					0
+#define LOG_RENEWAL_TIMER					1
 
 
 
@@ -132,7 +132,7 @@ void _DHCPRenewTimeout(TimerHandle_t timer) {
 	DHCPClient *client = static_cast<DHCPClient *>(ctx);
 
 #if LOG_RENEWAL_TIMER
-	LOG(S_DEBUG, "Renewal timer expired");
+	LOG(S_DEBUG, "Attempting to renew DHCP lease");
 #endif
 
 	// change into the RENEW state

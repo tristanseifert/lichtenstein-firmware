@@ -51,7 +51,7 @@ void Clock::enableRTCHardware() {
 	RCC_APB1PeriphClockCmd(RCC_APB1Periph_PWR | RCC_APB1Periph_BKP, ENABLE);
 
 	// set up the clocks for the RTC
-	this->RTCClockConfig();
+//	this->RTCClockConfig();
 }
 
 /**

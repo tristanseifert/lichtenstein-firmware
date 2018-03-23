@@ -257,7 +257,18 @@ void Filesystem::setUpDMA(void) {
  */
 Filesystem::~Filesystem() {
 	// delete the HAL
-	delete this->flashHAL;
+	if(this->flashHAL) {
+		delete this->flashHAL;
+	}
+
+	// delete task and message queue
+	if(this->task) {
+		vTaskDelete(this->task);
+	}
+
+	if(this->messageQueue) {
+		vQueueDelete(this->messageQueue);
+	}
 }
 
 
@@ -266,14 +277,22 @@ Filesystem::~Filesystem() {
  * Initializes the task and its associated structures.
  */
 void Filesystem::setUpTask(void) {
-	// create the task
 	BaseType_t ok;
 
-	ok = xTaskCreate(_FSTaskTrampoline, "FS", Filesystem::taskStackSize,
-					 this, Filesystem::taskPriority, &this->task);
+	// set up the message queue
+	this->messageQueue = xQueueCreate(Filesystem::MessageQueueDepth,
+			sizeof(fs_message_t));
+
+	if(this->messageQueue == nullptr) {
+		LOG(S_FATAL, "Couldn't create message queue");
+	}
+
+	// create the task
+	ok = xTaskCreate(_FSTaskTrampoline, "FS", Filesystem::TaskStackSize,
+					 this, Filesystem::TaskPriority, &this->task);
 
 	if(ok != pdPASS) {
-		LOG(S_ERROR, "Couldn't create filesystem task!");
+		LOG(S_FATAL, "Couldn't create task");
 	}
 
 	// create the mutex protecting the flash
@@ -290,6 +309,9 @@ void Filesystem::setUpTask(void) {
 void Filesystem::taskEntry(void) {
 	int err = 0;
 
+	BaseType_t ok;
+	fs_message_t msg;
+
 	// read the flash memory's ID and sizing
 	this->identifyFlash();
 
@@ -303,10 +325,200 @@ void Filesystem::taskEntry(void) {
 
 	// message loop
 	while(1) {
-		vTaskDelay(1000);
+		// read from the message queue
+		ok = xQueueReceive(this->messageQueue, &msg, portMAX_DELAY);
+
+		if(ok != pdPASS) {
+			LOG(S_ERROR, "Error reading queue: %u", ok);
+			continue;
+		}
+
+		// process message here
+		switch(msg.type) {
+			// open a file
+			case kFSMessageOpenFile: {
+				spiffs_file file;
+
+				// attempt to open the file
+				file = SPIFFS_open(&this->fs,
+						msg.payload.open.filename,
+						msg.payload.open.flags, 0);
+
+				// handle errors
+				if(file < 0) {
+					*msg.returnValuePtr = SPIFFS_errno(&this->fs);
+				}
+				// otherwise, write the file handle
+				else {
+					*msg.successPtr = true;
+					*msg.descriptor = file;
+				}
+
+				// notify task
+				xSemaphoreGive(msg.completion);
+				break;
+			}
+			// close a file
+			case kFSMessageCloseFile: {
+				err = SPIFFS_close(&this->fs, *msg.descriptor);
+
+				// handle errors
+				if(err < 0) {
+					*msg.returnValuePtr = SPIFFS_errno(&this->fs);
+				} else {
+					*msg.successPtr = true;
+				}
+
+				// notify task
+				xSemaphoreGive(msg.completion);
+				break;
+			}
+
+			// read from a file
+			case kFSMessageRead: {
+				// attempt read
+				err = SPIFFS_read(&this->fs, *msg.descriptor,
+						msg.payload.read.buffer,
+						msg.payload.read.length);
+
+				// handle errors
+				if(err < 0) {
+					*msg.returnValuePtr = SPIFFS_errno(&this->fs);
+				} else {
+					// return value is bytes read
+					*msg.returnValuePtr = err;
+					*msg.successPtr = true;
+				}
+
+				// notify task
+				xSemaphoreGive(msg.completion);
+				break;
+			}
+			// write to a file
+			case kFSMessageWrite: {
+				// attempt write
+				err = SPIFFS_write(&this->fs, *msg.descriptor,
+						msg.payload.write.buffer,
+						msg.payload.write.length);
+
+				// handle errors
+				if(err < 0) {
+					*msg.returnValuePtr = SPIFFS_errno(&this->fs);
+				} else {
+					// return value is bytes written
+					*msg.returnValuePtr = err;
+					*msg.successPtr = true;
+				}
+
+				// notify task
+				xSemaphoreGive(msg.completion);
+				break;
+			}
+
+			// seek and tell
+			case kFSMessageSeek:
+			case kFSMessageTell: {
+				// attempt the seek
+				err = SPIFFS_lseek(&this->fs, *msg.descriptor,
+						msg.payload.seek.offset,
+						msg.payload.seek.mode);
+
+				// handle errors
+				if(err < 0) {
+					*msg.returnValuePtr = SPIFFS_errno(&this->fs);
+				} else {
+					// return value is the new position in the file
+					*msg.returnValuePtr = err;
+					*msg.successPtr = true;
+				}
+
+				// notify task
+				xSemaphoreGive(msg.completion);
+				break;
+			}
+
+			// flush all pending writes
+			case kFSMessageFlush: {
+				// flush
+				err = SPIFFS_fflush(&this->fs, *msg.descriptor);
+
+				// handle errors
+				if(err < 0) {
+					*msg.returnValuePtr = SPIFFS_errno(&this->fs);
+				} else {
+					*msg.successPtr = true;
+				}
+
+				// notify task
+				xSemaphoreGive(msg.completion);
+				break;
+			}
+
+			// remove a file
+			case kFSMessageRemove: {
+				// attempt to delete the file
+				err = SPIFFS_remove(&this->fs, msg.payload.remove.filename);
+
+				// handle errors
+				if(err < 0) {
+					*msg.returnValuePtr = SPIFFS_errno(&this->fs);
+				} else {
+					*msg.successPtr = true;
+				}
+
+				// notify task
+				xSemaphoreGive(msg.completion);
+				break;
+			}
+			// rename a file
+			case kFSMessageRename: {
+				// attempt to rename the file
+				err = SPIFFS_rename(&this->fs, msg.payload.rename.oldName,
+						msg.payload.rename.newName);
+
+				// handle errors
+				if(err < 0) {
+					*msg.returnValuePtr = SPIFFS_errno(&this->fs);
+				} else {
+					*msg.successPtr = true;
+				}
+
+				// notify task
+				xSemaphoreGive(msg.completion);
+				break;
+			}
+
+			// get info about the file
+			case kFSMessageStat: {
+				spiffs_stat stat;
+
+				// call stat function
+				err = SPIFFS_stat(&this->fs, msg.payload.stat.filename, &stat);
+
+				// handle errors
+				if(err < 0) {
+					*msg.returnValuePtr = SPIFFS_errno(&this->fs);
+				} else {
+					*msg.successPtr = true;
+
+					// extract info from the stat structure here
+					*msg.payload.stat.sizePtr = stat.size;
+				}
+
+				// notify task
+				xSemaphoreGive(msg.completion);
+				break;
+			}
+
+			// unhandled message types
+			default:
+				LOG(S_WARN, "Unhandled message type: %u", msg.type);
+				break;
+		}
 	}
 
 	// tear down the filesystem
+	SPIFFS_unmount(&this->fs);
 }
 
 /**

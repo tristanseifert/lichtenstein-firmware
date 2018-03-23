@@ -71,10 +71,16 @@ class Filesystem {
 		friend void _FSTaskTrampoline(void *);
 		void taskEntry(void);
 
-		static const size_t taskStackSize = 300;
-		static const int taskPriority = 3;
+		// Size of the filesystem task stack, in 32-bit words
+		static const size_t TaskStackSize = 300;
+		// Priority of the filesystem task
+		static const int TaskPriority = 3;
+		// how many messages can be pending at a time in the message queue
+		static const size_t MessageQueueDepth = 8;
 
 		TaskHandle_t task = nullptr;
+
+		QueueHandle_t messageQueue = nullptr;
 
 	private:
 		friend s32_t _spiffs_read(u32_t addr, u32_t size, u8_t *dst);
