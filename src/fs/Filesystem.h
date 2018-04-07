@@ -115,6 +115,9 @@ class Filesystem {
 		uint8_t *fsCache = nullptr;
 
 		int spiffsMount(bool triedFormat = false);
+		void spiffsListFiles(void);
+
+		void spiffsCheck(void);
 
 	private:
 		void identifyFlash(void);

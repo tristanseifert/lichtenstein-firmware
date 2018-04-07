@@ -34,6 +34,9 @@ static const int outputBitsPerDataBit = 3;
 static const int outputBytesPerPixel = (bytesPerPixel * 8 * outputBitsPerDataBit) / 8;
 static const int outputBufSz = (ledsPerChannel * outputBytesPerPixel) + 4;
 
+// log output buffer allocation
+#define LOG_BUFFER_ALLOC					0
+
 namespace ledout {
 
 /**
@@ -100,8 +103,10 @@ OutputTask::OutputTask() {
 		// allocate buffers
 		this->outputBuffer[i] = (uint8_t *) pvPortMalloc(outputBufSz);
 
+#if LOG_BUFFER_ALLOC
 		LOG(S_DEBUG, "allocated buffer %d: output = 0x%x, size %u",
 					 i, this->outputBuffer[i], outputBufSz);
+#endif
 
 		// clear the buffer
 		memset(this->outputBuffer[i], 0, outputBufSz);

@@ -11,10 +11,14 @@
 #include <LichtensteinApp.h>
 
 // writes larger than this will use DMA
-#define DMA_THRESHOLD			(1024*1024*4)
+#define DMA_THRESHOLD							(1024*1024*4)
 
+// when enabled, use the word program instruction
+#define USE_WORD_PROGRAM_INSTRUCTION		0
+// log writes
+#define LOG_WRITES						0
 // set this variable to log invocations to the IO functions
-#define LOG_IO					0
+#define LOG_IO								0
 
 namespace fs {
 
@@ -125,25 +129,18 @@ int SST25VF016::read(uint32_t address, size_t size, void *dst) {
 }
 
 /**
- * Writes to the flash. The address _must_ be even.
+ * Writes to the flash.
  */
 int SST25VF016::write(uint32_t address, size_t size, void *src) {
+#if USE_WORD_PROGRAM_INSTRUCTION
 	int err;
+
+	uint8_t *outBuf = reinterpret_cast<uint8_t *>(src);
+	unsigned int bytesWritten = 0, endOfCommand = 0;
 
 #if LOG_IO
 	LOG(S_DEBUG, "Writing %u bytes to 0x%06x, buffer at 0x%x", size, address, src);
 #endif
-
-	// DMA can do a maximum of 64K so limit to that
-	if(size >= 0xFFFF) {
-		return -1;
-	}
-
-	// the address _must_ be even
-	if((address & 1)) {
-		LOG(S_ERROR, "Attempt to write to odd address 0x%08x", address);
-		return -1;
-	}
 
 
 	// start a flash transaction
@@ -165,6 +162,40 @@ int SST25VF016::write(uint32_t address, size_t size, void *src) {
 
 	this->fs->spiPulseCS();
 
+	// is the address odd? if so, write the first byte
+	if((address & 1)) {
+		// re-assert /CS and send write command
+		this->fs->setFlashCS(true);
+
+		address += bytesWritten;
+		err = this->fs->flashCommandWithAddress(SST25VF016::cmdWriteByte, address);
+
+		if(err != 0) {
+			this->fs->endFlashTransaction();
+
+			LOG(S_ERROR, "Couldn't send write command with address 0x%06x", address);
+			return err;
+		}
+
+		// send the data byte
+		this->fs->spiWrite(outBuf[bytesWritten++]);
+
+		// wait for the data to be sent and the peripheral to be idle
+		this->fs->spiWaitIdle();
+
+		// de-assert CS, wait for the write operation to complete
+		this->fs->setFlashCS(false);
+		this->flashWaitTBP();
+
+		// increment address
+		address++;
+
+		// were all bytes written?
+		if(bytesWritten == size) {
+			goto done;
+		}
+	}
+
 	// send the write command and address
 	err = this->fs->flashCommandWithAddress(SST25VF016::cmdWriteAIW, address);
 
@@ -176,9 +207,6 @@ int SST25VF016::write(uint32_t address, size_t size, void *src) {
 	}
 
 	// write two bytes at a time
-	uint8_t *outBuf = reinterpret_cast<uint8_t *>(src);
-	unsigned int bytesWritten = 0, endOfCommand = 0;
-
 	for(unsigned int i = 0; i < (size & 0xFFFFFFFE); i++) {
 		this->fs->spiWrite(outBuf[i]);
 		bytesWritten++; endOfCommand++;
@@ -233,7 +261,6 @@ int SST25VF016::write(uint32_t address, size_t size, void *src) {
 
 		// send the data byte
 		this->fs->spiWrite(outBuf[bytesWritten++]);
-		bytesWritten++;
 
 		// wait for the data to be sent and the peripheral to be idle
 		this->fs->spiWaitIdle();
@@ -243,7 +270,10 @@ int SST25VF016::write(uint32_t address, size_t size, void *src) {
 		this->flashWaitTBP();
 	}
 
+done: ;
+#if LOG_WRITES
 	LOG(S_DEBUG, "Wrote %u bytes, expected %u", bytesWritten, size);
+#endif
 
 	// put the flash back in write disable state
 	this->fs->setFlashCS(true);
@@ -261,7 +291,86 @@ int SST25VF016::write(uint32_t address, size_t size, void *src) {
 
 	// if we get down here, everything should be good
 	return 0;
+#else
+	int err;
+
+#if LOG_IO
+	LOG(S_DEBUG, "Writing %u bytes to 0x%06x, buffer at 0x%x", size, address, src);
+#endif
+
+	// start a flash transaction
+	if(this->fs->startFlashTransaction() != 0) {
+		LOG(S_ERROR, "Couldn't start transaction for write");
+
+		return -1;
+	}
+
+	// we need to enable writing so send the write enable command
+	err = this->fs->flashCommand(SST25VF016::cmdWriteEnable);
+
+	if(err != 0) {
+		this->fs->endFlashTransaction();
+
+		LOG(S_ERROR, "Couldn't send write enable");
+		return err;
+	}
+
+	this->fs->spiPulseCS();
+
+
+	// write a byte at a time
+	uint8_t *outBuf = reinterpret_cast<uint8_t *>(src);
+	unsigned int bytesWritten = 0;
+
+	for(unsigned int i = 0; i < size; i++) {
+		// re-assert /CS and send write command
+		this->fs->setFlashCS(true);
+
+		err = this->fs->flashCommandWithAddress(SST25VF016::cmdWriteByte, address);
+
+		if(err != 0) {
+			this->fs->endFlashTransaction();
+
+			LOG(S_ERROR, "Couldn't send write command with address 0x%06x", address);
+			return err;
+		}
+
+		// send the data byte and increment address
+		this->fs->spiWrite(outBuf[bytesWritten++]);
+		address++;
+
+		// wait for the data to be sent and the peripheral to be idle
+		this->fs->spiWaitIdle();
+
+		// de-assert CS, wait for the write operation to complete
+		this->fs->setFlashCS(false);
+		this->flashWaitTBP();
+	}
+
+#if LOG_WRITES
+	LOG(S_DEBUG, "Wrote %u bytes, expected %u", bytesWritten, size);
+#endif
+
+
+	// put the flash back in write disable state
+	this->fs->setFlashCS(true);
+	err = this->fs->flashCommand(SST25VF016::cmdWriteDisable);
+
+	if(err != 0) {
+		this->fs->endFlashTransaction();
+
+		LOG(S_ERROR, "Couldn't send write disable");
+		return err;
+	}
+
+	// end the flash transaction we started earlier
+	this->fs->endFlashTransaction();
+
+	// if we get down here, everything should be good
+	return 0;
+#endif
 }
+
 
 /**
  * Performs an erase operation over a block.

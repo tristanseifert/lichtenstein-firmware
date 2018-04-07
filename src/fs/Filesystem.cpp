@@ -68,10 +68,12 @@ static const flash_info_t supportedChips[numSupportedChips] = {
 /// produce log output for reads from flash
 #define LOG_FLASH_READS						0
 /// produce log output for writes to flash
-#define LOG_FLASH_WRITES						1
+#define LOG_FLASH_WRITES						0
 /// produce log output for erasing flash
-#define LOG_FLASH_ERASE						1
+#define LOG_FLASH_ERASE						0
 
+/// formats the filesystem on mount
+#define FORMAT_ON_MOUNT						0
 
 
 #if HW == HW_MUSTARD
@@ -141,6 +143,14 @@ s32_t _spiffs_erase(u32_t addr, u32_t size);
  */
 void _FSTaskTrampoline(void *ctx) {
 	(static_cast<Filesystem *>(ctx))->taskEntry();
+}
+
+/**
+ * Timer callback for SPIFFS checking.
+ */
+void _FSCheckResetTimerCallback(void *ctx) {
+	LOG_ISR(S_WARN, "Resetting system after SPIFFS check…");
+	NVIC_SystemReset();
 }
 
 
@@ -393,17 +403,17 @@ void Filesystem::taskEntry(void) {
 				if(file < 0) {
 					*msg.returnValuePtr = SPIFFS_errno(&this->fs);
 
-					LOG(S_DEBUG, "Opening file \"%s\", flags 0x%04x: err %d",
+					/*LOG(S_DEBUG, "Opening file \"%s\", flags 0x%04x: err %d",
 							msg.payload.open.filename, msg.payload.open.flags,
-							*msg.returnValuePtr);
+							*msg.returnValuePtr);*/
 				}
 				// otherwise, write the file handle
 				else {
 					*msg.successPtr = true;
 					*msg.descriptor = file;
 
-					LOG(S_DEBUG, "Opening file \"%s\", flags 0x%04x: success",
-							msg.payload.open.filename, msg.payload.open.flags);
+					/*LOG(S_DEBUG, "Opening file \"%s\", flags 0x%04x: success",
+							msg.payload.open.filename, msg.payload.open.flags);*/
 				}
 
 				// notify task
@@ -483,6 +493,10 @@ void Filesystem::taskEntry(void) {
 					*msg.returnValuePtr = err;
 					*msg.successPtr = true;
 				}
+
+				/*LOG(S_DEBUG, "Seek to %d (mode %u): %d",
+						msg.payload.seek.offset, msg.payload.seek.mode,
+						*msg.returnValuePtr);*/
 
 				// notify task
 				xSemaphoreGive(msg.completion);
@@ -636,6 +650,33 @@ int Filesystem::spiffsMount(bool triedFormat) {
 		return ret;
 	}
 
+#if FORMAT_ON_MOUNT
+	static bool formatted = false;
+
+	if(!formatted) {
+		// set flag to avoid formatting again
+		formatted = true;
+
+		LOG(S_WARN, "Formatting filesystem");
+
+		// unmount
+		SPIFFS_unmount(&this->fs);
+
+		// attempt to format
+		ret = SPIFFS_format(&this->fs);
+
+		if(ret != SPIFFS_OK) {
+			LOG(S_ERROR, "error formatting: %d", ret);
+			return ret;
+		} else {
+			// if it was successful, attempt to mount it again
+			LOG(S_INFO, "format success, re-mounting...");
+
+			return this->spiffsMount(true);
+		}
+	}
+#endif
+
 	// get info about the fs
 	uint32_t total, used;
 	ret = SPIFFS_info(&this->fs, &total, &used);
@@ -647,8 +688,62 @@ int Filesystem::spiffsMount(bool triedFormat) {
 		return ret;
 	}
 
+	// list all files
+	this->spiffsListFiles();
+
 	// if we get down here, we mounted successfully
 	return 0;
+}
+
+/**
+ * Prints a listing of all files in the SPIFFS filesystem.
+ */
+void Filesystem::spiffsListFiles(void) {
+	spiffs_DIR d;
+	struct spiffs_dirent e;
+	struct spiffs_dirent *pe = &e;
+
+	// open directory
+	SPIFFS_opendir(&this->fs, "/", &d);
+
+	// keep iterating
+	while((pe = SPIFFS_readdir(&d, pe))) {
+		LOG(S_DEBUG, "File %04x: %s – %d bytes", pe->obj_id, pe->name,
+				pe->size);
+	}
+
+	// close it again
+	SPIFFS_closedir(&d);
+}
+
+/**
+ * Starts running the SPIFFS filesystem check function, then schedules a
+ * timer for 30 seconds later to reset the system.
+ */
+void Filesystem::spiffsCheck(void) {
+	BaseType_t ok;
+
+	// set up timer
+	TimerHandle_t timer;
+
+	timer = xTimerCreate("SPIFFSCheck", (30000 / portTICK_PERIOD_MS), pdFALSE,
+			nullptr, _FSCheckResetTimerCallback);
+
+	if(timer == nullptr) {
+		LOG(S_ERROR, "Couldn't create timer");
+		return;
+	}
+
+	// start timer
+	ok = xTimerStart(timer, portMAX_DELAY);
+
+	if(ok != pdPASS) {
+		LOG(S_ERROR, "Couldn't start timer");
+		return;
+	}
+
+	// run the check function
+	SPIFFS_check(&this->fs);
 }
 
 

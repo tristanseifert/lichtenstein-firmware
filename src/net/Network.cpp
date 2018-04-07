@@ -278,7 +278,7 @@ void Network::scanForPHYs(void) {
 		}
 		// otherwise, we've found a PHY. try to instantiate it
 		else {
-			LOG(S_INFO, "Found PHY at %d: 0x%08x", phyAddr, id);
+			LOG(S_INFO, "Found PHY at MDIO address %02d: 0x%08x", phyAddr, id);
 
 			this->phy = net::EthPHY::phyForId(this, id, phyAddr, (ETH_RMII ? true : false));
 
@@ -693,11 +693,62 @@ void Network::readIPConfig(void) {
 		return this->setUpIPConfigDefaults();
 	} else {
 		// read config
+		this->parseIPConfig(file);
 
 		// close file
 		file->close();
 		delete file;
 	}
+}
+
+/**
+ * Parses the IP config file.
+ */
+void Network::parseIPConfig(void *_file) {
+	int err = 0, size = 0;
+	fs::File *file = static_cast<fs::File *>(_file);
+
+	// attempt to get the size of the file
+	err = file->seek(fs::File::END, 0);
+
+	if(err < 0) {
+		LOG(S_ERROR, "Couldn't seek to end of file: %d", err);
+		return;
+	}
+
+	err = file->tell();
+
+	if(err < 0) {
+		LOG(S_ERROR, "Couldn't get position in file: %d", err);
+		return;
+	} else {
+		size = err;
+	}
+
+	err = file->seek(fs::File::SET, 0);
+
+	if(err < 0) {
+		LOG(S_ERROR, "Couldn't seek to start of file: %d", err);
+		return;
+	}
+
+	LOG(S_INFO, "Config file is %u bytes", size);
+
+	// allocate a buffer and read
+	char *buffer = static_cast<char *>(pvPortMalloc(size));
+	memset(buffer, 0, size);
+
+	err = file->read(buffer, size);
+
+	if(err < 0) {
+		LOG(S_ERROR, "Couldn't read from file: %d", err);
+	}
+
+	// parse config
+	LOG(S_DEBUG, "Read IP config:\n%s", buffer);
+
+	// clean up buffer
+	vPortFree(buffer);
 }
 
 /**
@@ -738,7 +789,7 @@ void Network::setUpIPConfigDefaults(void) {
 	}
 
 	// release buffer
-	LOG(S_DEBUG, "Wrote config:\n%s", buffer);
+//	LOG(S_DEBUG, "Wrote config:\n%s", buffer);
 	vPortFree(buffer);
 
 	// close file

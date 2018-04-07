@@ -57,6 +57,7 @@ class Network {
 		void setUpStack(void);
 
 		void readIPConfig(void);
+		void parseIPConfig(void *);
 		void setUpIPConfigDefaults(void);
 
 	// global helpers
