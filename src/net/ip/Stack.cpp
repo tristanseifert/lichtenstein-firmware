@@ -163,6 +163,8 @@ void Stack::setHostname(const char *name) {
 
 	// copy the hostname
 	strncpy(this->hostname, name, len);
+
+	LOG(S_DEBUG, "Changed hostname: %s", this->hostname);
 }
 
 

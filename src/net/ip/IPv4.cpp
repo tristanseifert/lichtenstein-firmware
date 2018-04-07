@@ -27,7 +27,7 @@
 // enable to log information when packets are transmitted
 #define DEBUG_PACKET_TRANSMISSION			0
 // log when the multicast filter is changed
-#define LOG_MULTICAST_FILTER					1
+#define LOG_MULTICAST_FILTER					0
 
 
 namespace ip {

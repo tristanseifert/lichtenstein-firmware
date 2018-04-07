@@ -125,8 +125,7 @@ int SST25VF016::read(uint32_t address, size_t size, void *dst) {
 }
 
 /**
- * Writes to the flash. The address _must_ be even and the size _must_ be a
- * multiple of two.
+ * Writes to the flash. The address _must_ be even.
  */
 int SST25VF016::write(uint32_t address, size_t size, void *src) {
 	int err;
@@ -140,8 +139,9 @@ int SST25VF016::write(uint32_t address, size_t size, void *src) {
 		return -1;
 	}
 
-	// the address _must_ be even and size must be a multiple of two
-	if((address & 1) || (size & 1)) {
+	// the address _must_ be even
+	if((address & 1)) {
+		LOG(S_ERROR, "Attempt to write to odd address 0x%08x", address);
 		return -1;
 	}
 
@@ -179,7 +179,7 @@ int SST25VF016::write(uint32_t address, size_t size, void *src) {
 	uint8_t *outBuf = reinterpret_cast<uint8_t *>(src);
 	unsigned int bytesWritten = 0, endOfCommand = 0;
 
-	for(unsigned int i = 0; i < size; i++) {
+	for(unsigned int i = 0; i < (size & 0xFFFFFFFE); i++) {
 		this->fs->spiWrite(outBuf[i]);
 		bytesWritten++; endOfCommand++;
 
@@ -215,8 +215,38 @@ int SST25VF016::write(uint32_t address, size_t size, void *src) {
 	// pulse /CS so the write command begins, then disable writing
 	this->fs->setFlashCS(false);
 	this->flashWaitTBP();
-	this->fs->setFlashCS(true);
 
+	// are there any risidual bytes to write?
+	if(bytesWritten < size) {
+		// re-assert /CS and send write command
+		this->fs->setFlashCS(true);
+
+		address += bytesWritten;
+		err = this->fs->flashCommandWithAddress(SST25VF016::cmdWriteByte, address);
+
+		if(err != 0) {
+			this->fs->endFlashTransaction();
+
+			LOG(S_ERROR, "Couldn't send write command with address 0x%06x", address);
+			return err;
+		}
+
+		// send the data byte
+		this->fs->spiWrite(outBuf[bytesWritten++]);
+		bytesWritten++;
+
+		// wait for the data to be sent and the peripheral to be idle
+		this->fs->spiWaitIdle();
+
+		// de-assert CS, wait for the write operation to complete
+		this->fs->setFlashCS(false);
+		this->flashWaitTBP();
+	}
+
+	LOG(S_DEBUG, "Wrote %u bytes, expected %u", bytesWritten, size);
+
+	// put the flash back in write disable state
+	this->fs->setFlashCS(true);
 	err = this->fs->flashCommand(SST25VF016::cmdWriteDisable);
 
 	if(err != 0) {

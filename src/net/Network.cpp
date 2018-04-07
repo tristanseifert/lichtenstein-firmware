@@ -17,10 +17,20 @@
 
 #include "../board/Board.h"
 #include "../clock/Clock.h"
+#include "../fs/Filesystem.h"
+#include "../fs/File.h"
 
 #include <LichtensteinApp.h>
 
 #include <cstring>
+
+/**
+ * INI file for the default IP configuration
+ */
+const char *defaultIPConfig =
+"[ip]\n"
+"dhcp = 1\n"
+"hostname = \"lichtenstein-00-00-00-00-00-00\"\n";
 
 // hardware config
 #if HW == HW_MUSTARD
@@ -104,10 +114,13 @@ void Network::readMACFromEEPROM(void) {
 	b->configEEPROMRead(&this->macAddress, Network::ethParamMACOffset, 6);
 
 	// debug
-	LOG(S_INFO, "MAC address: %02x:%02x:%02x:%02x:%02x:%02x",
-				 this->macAddress[0], this->macAddress[1],
-				 this->macAddress[2], this->macAddress[3],
-				 this->macAddress[4], this->macAddress[5]);
+	char macStr[18];
+
+	stack_mac_addr_t addr;
+	memcpy(&addr, this->macAddress, 6);
+
+	ip::Stack::macToString(addr, macStr, 18);
+	LOG(S_INFO, "MAC address: %s", macStr);
 }
 
 
@@ -427,6 +440,9 @@ void Network::taskEntry(void) {
 	this->setUpStack();
 	this->startNetServices();
 
+	// try to read the IP config from flash
+	this->readIPConfig();
+
 	int messages = 0;
 
 	// start the message loop
@@ -594,7 +610,7 @@ void *Network::getTxBuffer(size_t size, int timeout) {
  */
 void Network::queueTxBuffer(void *addr) {
 	// handle address of zero
-	if(addr == nullptr || this == nullptr) {
+	if(addr == nullptr) {
 		LOG(S_ERROR, "addr cannot be nullptr");
 		DebugBreakpoint();
 	}
@@ -663,6 +679,81 @@ void Network::setUpStack(void) {
 	// set the unicast MAC address
 	this->stack->setUnicastMACAddress(this->macAddress);
 }
+
+
+
+/**
+ * Reads the IP configuration from flash.
+ */
+void Network::readIPConfig(void) {
+	auto file = Filesystem::sharedInstance()->open("ipconfig.bin", Filesystem::READONLY);
+
+	if(file == nullptr) {
+		LOG(S_WARN, "Couldn't open IP config; setting defaults");
+		return this->setUpIPConfigDefaults();
+	} else {
+		// read config
+
+		// close file
+		file->close();
+		delete file;
+	}
+}
+
+/**
+ * Sets up the default IP configuration.
+ */
+void Network::setUpIPConfigDefaults(void) {
+	int err = 0;
+
+	// attempt to create and open file
+	auto file = Filesystem::sharedInstance()->open("ipconfig.bin", Filesystem::READWRITE | Filesystem::CREATE | Filesystem::TRUNCATE);
+
+	if(file == nullptr) {
+		LOG(S_ERROR, "Couldn't create IP config file!");
+		return;
+	}
+
+	// read defaults into buffer
+	size_t length = strlen(defaultIPConfig) + 2;
+	char *buffer = static_cast<char *>(pvPortMalloc(length));
+
+	strncpy(buffer, defaultIPConfig, length);
+
+	// replace MAC address
+	char macStr[18];
+	ip::Stack::macToString(this->stack->getMacAddress(), macStr, 18);
+
+	char *macStart = strstr(buffer, "00-00-00-00-00-00");
+
+	if(macStart != nullptr) {
+		memcpy(macStart, macStr, 17);
+	}
+
+	// write defaults
+	err = file->write(buffer, strlen(buffer));
+
+	if(err < 0) {
+		LOG(S_ERROR, "Couldn't write to file: %d", err);
+	}
+
+	// release buffer
+	LOG(S_DEBUG, "Wrote config:\n%s", buffer);
+	vPortFree(buffer);
+
+	// close file
+	err = file->close();
+	delete file;
+
+	if(err != 0) {
+		LOG(S_ERROR, "Couldn't close file: %d", err);
+	}
+
+	// re-read the config
+	this->readIPConfig();
+}
+
+
 
 /**
  * Releases a previously received packet. This returns the buffer back to

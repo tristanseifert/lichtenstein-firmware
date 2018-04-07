@@ -12,6 +12,7 @@
 
 #include <LichtensteinApp.h>
 
+
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wpadded"
 
@@ -19,9 +20,11 @@
 
 #pragma GCC diagnostic pop
 
+
 namespace fs {
 	class FlashHAL;
 	class SST25VF016;
+	class File;
 }
 
 #pragma GCC diagnostic push
@@ -30,10 +33,25 @@ namespace fs {
 class Filesystem {
 	friend class fs::FlashHAL;
 	friend class fs::SST25VF016;
+	friend class fs::File;
 
 	public:
 		static void init(void);
 		static Filesystem *sharedInstance(void) noexcept;
+
+	public:
+		enum {
+			READONLY						= (1 << 0),
+			READWRITE					= (1 << 1),
+
+			TRUNCATE						= (1 << 4),
+			CREATE						= (1 << 5),
+			APPEND						= (1 << 6),
+
+			WRITETHROUGH					= (1 << 15),
+		};
+
+		fs::File *open(const char *name, int flags);
 
 	private:
 		Filesystem();
@@ -81,6 +99,9 @@ class Filesystem {
 		TaskHandle_t task = nullptr;
 
 		QueueHandle_t messageQueue = nullptr;
+
+	private:
+		int postFSRequest(fs_message_t *msg, int timeout = portMAX_DELAY);
 
 	private:
 		friend s32_t _spiffs_read(u32_t addr, u32_t size, u8_t *dst);

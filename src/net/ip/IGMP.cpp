@@ -334,7 +334,7 @@ void IGMP::taskSendMembershipReport3(void *_msg) {
 	char destIpStr[16];
 	Stack::ipToString(msg->address, destIpStr, 16);
 
-	LOG_ISR(S_DEBUG, "Sending membership report for %s", destIpStr);
+	LOG(S_DEBUG, "Sending membership report for %s", destIpStr);
 #endif
 
 	// populate the IGMP packet

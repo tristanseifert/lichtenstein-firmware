@@ -54,7 +54,10 @@ class Network {
 
 		void scanForPHYs(void);
 
-		void setUpStack();
+		void setUpStack(void);
+
+		void readIPConfig(void);
+		void setUpIPConfigDefaults(void);
 
 	// global helpers
 	public:

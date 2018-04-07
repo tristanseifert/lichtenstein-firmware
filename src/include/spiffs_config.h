@@ -26,23 +26,24 @@ typedef uint8_t u8_t;
 // compile time switches
 
 // Set generic spiffs debug output call.
-// #define SPIFFS_DBG(_f, ...) LOG(S_DEBUG, _f, ## __VA_ARGS__)
-#define SPIFFS_DBG(_f, ...)
+#define SPIFFS_DBG(_f, ...) LOG(S_DEBUG, _f, ## __VA_ARGS__)
+//#define SPIFFS_DBG(_f, ...)
 
 // Set spiffs debug output call for garbage collecting.
-// #define SPIFFS_GC_DBG(_f, ...) LOG(S_DEBUG, _f, ## __VA_ARGS__)
-#define SPIFFS_GC_DBG(_f, ...)
+#define SPIFFS_GC_DBG(_f, ...) LOG(S_DEBUG, _f, ## __VA_ARGS__)
+//#define SPIFFS_GC_DBG(_f, ...)
 
 // Set spiffs debug output call for caching.
 // #define SPIFFS_CACHE_DBG(_f, ...) LOG(S_DEBUG, _f, ## __VA_ARGS__)
 #define SPIFFS_CACHE_DBG(_f, ...)
 
 // Set spiffs debug output call for system consistency checks.
-// #define SPIFFS_CHECK_DBG(_f, ...) LOG(S_DEBUG, _f, ## __VA_ARGS__)
-#define SPIFFS_CHECK_DBG(_f, ...)
+#define SPIFFS_CHECK_DBG(_f, ...) LOG(S_DEBUG, _f, ## __VA_ARGS__)
+//#define SPIFFS_CHECK_DBG(_f, ...)
 
 // Set spiffs debug output call for all api invocations.
-#define SPIFFS_API_DBG(_f, ...)
+#define SPIFFS_API_DBG(_f, ...) LOG(S_DEBUG, _f, ## __VA_ARGS__)
+//#define SPIFFS_API_DBG(_f, ...)
 
 
 
@@ -91,7 +92,7 @@ typedef uint8_t u8_t;
 // Enables/disable memory read caching of nucleus file system operations.
 // If enabled, memory area must be provided for cache in SPIFFS_mount.
 #ifndef  SPIFFS_CACHE
-#define SPIFFS_CACHE                    1
+#define SPIFFS_CACHE                    0
 #endif
 #if SPIFFS_CACHE
 // Enables memory write caching for file descriptors in hydrogen

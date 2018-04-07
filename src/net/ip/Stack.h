@@ -127,7 +127,7 @@ namespace ip {
 			bool isIPv4ConfigValid = false;
 
 			// set to use DHCP to configure the network
-			bool useDHCP = true;
+			bool useDHCP = false;
 			DHCPClient *dhcp = nullptr;
 
 		private:

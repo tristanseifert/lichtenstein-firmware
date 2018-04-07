@@ -366,7 +366,8 @@ void Logger::taskEntry(void) {
 			const char *module = (msg.module == nullptr) ? "???" : msg.module;
 
 			ret = mini_snprintf(gTraceBuffer, gTraceBufferSz,
-								"[%u %s %s:%u]: %s\r\n", msg.sev, module,
+								"[%08u %u %s %s:%u]: %s\r\n",
+								xTaskGetTickCount(), msg.sev, module,
 								msg.file, msg.line, msg.buffer);
 			this->printMessage(gTraceBuffer, ret);
 		}
@@ -387,66 +388,89 @@ int Logger::log(bool fromISR, logger_severity_t severity, const char *module, co
 	int ret;
 	char *bufferCopy = nullptr;
 
-	// lock the buffer
-	if(!fromISR) {
-		xSemaphoreTake(gBufferMutex, portMAX_DELAY);
-	}
+	// are we in an ISR?
+	if(fromISR) {
+		// format the original message
+		ret = mini_vsnprintf(gPrintBuffer, gPrintBufferSz, format, ap);
 
-	// Print to the local buffer
-	ret = mini_vsnprintf(gPrintBuffer, gPrintBufferSz, format, ap);
-
-	if(ret) {
-		// create a copy of the buffer
-		bufferCopy = (char *) pvPortMalloc((ret + 1));
-		memset(bufferCopy, 0, (ret + 1));
-		memcpy(bufferCopy, gPrintBuffer, ret);
-	} else {
-		// if the printf didn't evaluate to anything, exit
-		if(!fromISR) {
-			xSemaphoreGive(gBufferMutex);
+		if(ret == 0) {
+			// exit if no output was produced
+			goto done;
 		}
 
-		goto done;
-	}
+		// append a newline
+		gPrintBuffer[ret++] = '\r';
+		gPrintBuffer[ret++] = '\n';
+		gPrintBuffer[ret] = '\0';
 
-	// if the FreeRTOS scheduler is running, push it to the log task
-	if(taskRunning && fromISR == false) {
-		BaseType_t queued;
+/*
+		// move the string 64 bytes later
+		const size_t moveOff = 64;
 
-		// release the semaphore to the global buffer
-		if(!fromISR) {
-			xSemaphoreGive(gBufferMutex);
-		}
+		char *start = gPrintBuffer;
+		char *moveTo = gPrintBuffer + moveOff;
 
-		// create the message
-		logger_message_t msg;
+		memmove(moveTo, start, (gPrintBufferSz - moveOff));
 
-		msg.buffer = bufferCopy;
-		msg.file = file;
-		msg.line = line;
-		msg.module = module;
-		msg.sev = severity;
+		// format it for final output
+		ret = mini_snprintf(gPrintBuffer, gPrintBufferSz, "{%08u %u %s:%u %08u}: %s\r\n", xTaskGetTickCount(), severity, file, line, moveTo);
+*/
 
-		// queue it, dropping the message if not queued
-		queued = xQueueSendToBack(this->messageQueue, &msg, portMAX_DELAY);
-
-		if(queued != pdTRUE) {
-			vPortFree(bufferCopy);
-		}
-	}
-	// otherwise, just send it via the trace output
-	else {
-		if(fromISR) {
-			ret = mini_snprintf(gPrintBuffer, gPrintBufferSz, "{%u %s:%u}: %s\r\n", severity, file, line, bufferCopy);
-		} else {
-			ret = mini_snprintf(gPrintBuffer, gPrintBufferSz, "(%u %s:%u): %s\r\n", severity, file, line, bufferCopy);
-		}
-
+		// send it to the UART
 		this->printMessage(gPrintBuffer, ret, true);
-		vPortFree(bufferCopy);
+	} else {
+		// ---- all code below is only called outside ISRs ----
+		// lock the buffer
+		xSemaphoreTake(gBufferMutex, portMAX_DELAY);
 
-		// release the semaphore to the global buffer
-		if(!fromISR) {
+		// Print to the local buffer
+		ret = mini_vsnprintf(gPrintBuffer, gPrintBufferSz, format, ap);
+
+		if(ret) {
+			// create a copy of the buffer
+			bufferCopy = (char *) pvPortMalloc((ret + 1));
+			memset(bufferCopy, 0, (ret + 1));
+			memcpy(bufferCopy, gPrintBuffer, ret);
+		} else {
+			// if the printf didn't evaluate to anything, exit
+			xSemaphoreGive(gBufferMutex);
+
+			goto done;
+		}
+
+		// if the FreeRTOS scheduler is running, push it to the log task
+		if(taskRunning) {
+			BaseType_t queued;
+
+			// release the semaphore to the global buffer
+			if(!fromISR) {
+				xSemaphoreGive(gBufferMutex);
+			}
+
+			// create the message
+			logger_message_t msg;
+
+			msg.buffer = bufferCopy;
+			msg.file = file;
+			msg.line = line;
+			msg.module = module;
+			msg.sev = severity;
+
+			// queue it, dropping the message if not queued
+			queued = xQueueSendToBack(this->messageQueue, &msg, portMAX_DELAY);
+
+			if(queued != pdTRUE) {
+				vPortFree(bufferCopy);
+			}
+		}
+		// otherwise, just send it via the trace output
+		else {
+			ret = mini_snprintf(gPrintBuffer, gPrintBufferSz, "(%08u %u %s:%u): %s\r\n", xTaskGetTickCount(), severity, file, line, bufferCopy);
+
+			this->printMessage(gPrintBuffer, ret, true);
+			vPortFree(bufferCopy);
+
+			// release the semaphore to the global buffer
 			xSemaphoreGive(gBufferMutex);
 		}
 	}

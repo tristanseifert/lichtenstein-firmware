@@ -8,10 +8,14 @@
  *  Created on: Feb 17, 2018
  *      Author: tristan
  */
+#define FILE_PRIVATE
+
 #define LOG_MODULE "FS"
 
 #include "Filesystem.h"
 #include "FSPrivate.h"
+
+#include "File.h"
 
 #include <LichtensteinApp.h>
 
@@ -54,9 +58,21 @@ static const flash_info_t supportedChips[numSupportedChips] = {
 #define FS_PAGE_SIZE							256
 #define FS_FLASH_BLOCK_SIZE					(1024 * 4)
 
+/// enable caching in SPIFFS when set
+#define USE_CACHE							SPIFFS_CACHE
+
 /// size of the file descriptor buffer
 #define FS_FDBUF_SIZE						(32 * 16)
 #define FS_CACHE_BUF_SIZE					((FS_PAGE_SIZE + 32) * 4)
+
+/// produce log output for reads from flash
+#define LOG_FLASH_READS						0
+/// produce log output for writes to flash
+#define LOG_FLASH_WRITES						1
+/// produce log output for erasing flash
+#define LOG_FLASH_ERASE						1
+
+
 
 #if HW == HW_MUSTARD
 
@@ -261,14 +277,43 @@ Filesystem::~Filesystem() {
 		delete this->flashHAL;
 	}
 
-	// delete task and message queue
+	// delete task
 	if(this->task) {
 		vTaskDelete(this->task);
 	}
 
+	// mark completion of any outstanding ops and free queue
+	fs_message_t msg;
+	BaseType_t ok;
+
+	do {
+		// read message without waiting and give semaphore
+		ok = xQueueReceive(this->messageQueue, &msg, 0);
+
+		xSemaphoreGive(msg.completion);
+	} while(ok == pdPASS);
+
 	if(this->messageQueue) {
 		vQueueDelete(this->messageQueue);
 	}
+
+	// unmount filesystem
+	SPIFFS_unmount(&this->fs);
+
+	// de-allocate buffers
+	if(this->fsWorkBuf) {
+		vPortFree(this->fsWorkBuf);
+	}
+
+	if(this->fsFileDescriptors) {
+		vPortFree(this->fsFileDescriptors);
+	}
+
+#if USE_CACHE
+	if(this->fsCache) {
+		vPortFree(this->fsCache);
+	}
+#endif
 }
 
 
@@ -347,11 +392,18 @@ void Filesystem::taskEntry(void) {
 				// handle errors
 				if(file < 0) {
 					*msg.returnValuePtr = SPIFFS_errno(&this->fs);
+
+					LOG(S_DEBUG, "Opening file \"%s\", flags 0x%04x: err %d",
+							msg.payload.open.filename, msg.payload.open.flags,
+							*msg.returnValuePtr);
 				}
 				// otherwise, write the file handle
 				else {
 					*msg.successPtr = true;
 					*msg.descriptor = file;
+
+					LOG(S_DEBUG, "Opening file \"%s\", flags 0x%04x: success",
+							msg.payload.open.filename, msg.payload.open.flags);
 				}
 
 				// notify task
@@ -516,9 +568,6 @@ void Filesystem::taskEntry(void) {
 				break;
 		}
 	}
-
-	// tear down the filesystem
-	SPIFFS_unmount(&this->fs);
 }
 
 /**
@@ -530,10 +579,14 @@ int Filesystem::spiffsMount(bool triedFormat) {
 	// allocate some buffers
 	this->fsWorkBuf = (uint8_t *) pvPortMalloc(FS_PAGE_SIZE * 2);
 	this->fsFileDescriptors = (uint8_t *) pvPortMalloc(FS_FDBUF_SIZE);
+
+#if USE_CACHE
 	this->fsCache = (uint8_t *) pvPortMalloc(FS_CACHE_BUF_SIZE);
+#endif
 
 	// set up the spiffs config
 	spiffs_config cfg;
+	memset(&cfg, 0, sizeof(cfg));
 
 	cfg.phys_size = this->flashSize; // use all spi flash
 	cfg.phys_addr = 0x000000; // start spiffs at start of spi flash
@@ -546,8 +599,13 @@ int Filesystem::spiffsMount(bool triedFormat) {
 	cfg.hal_erase_f = _spiffs_erase;
 
 	// try and mount it
+#if USE_CACHE
 	ret = SPIFFS_mount(&this->fs, &cfg, this->fsWorkBuf, this->fsFileDescriptors,
 					   FS_FDBUF_SIZE, this->fsCache, FS_CACHE_BUF_SIZE, 0);
+#else
+	ret = SPIFFS_mount(&this->fs, &cfg, this->fsWorkBuf, this->fsFileDescriptors,
+					   FS_FDBUF_SIZE, nullptr, 0, 0);
+#endif
 
 	if(ret == SPIFFS_ERR_NOT_A_FS) {
 		// if we just tried to re-format but it failed, error out
@@ -591,6 +649,121 @@ int Filesystem::spiffsMount(bool triedFormat) {
 
 	// if we get down here, we mounted successfully
 	return 0;
+}
+
+
+
+/**
+ * Posts a message to the filesystem queue.
+ *
+ * @param msg Message to post
+ * @param timeout Maximum number of ticks to wait
+ * @return 0 if successful, error code otherwise.
+ */
+int Filesystem::postFSRequest(fs_message_t *msg, int timeout) {
+	BaseType_t ok;
+
+	// send message
+	ok = xQueueSendToBack(this->messageQueue, msg, timeout);
+
+	// handle errors
+	if(ok != pdPASS) {
+		LOG(S_ERROR, "Couldn't send message to task: %u", ok);
+		return 1;
+	}
+
+	// success if we get down here
+	return 0;
+}
+
+/**
+ * Attempts to open a file with the given set of flags.
+ *
+ * @param name Filename in flash
+ * @param flags Open flags
+ * @return Pointer to a newly allocated file, or nullptr if error.
+ */
+fs::File *Filesystem::open(const char *name, int flags) {
+	int err;
+	BaseType_t ok;
+
+	// structures for the message
+	fs_message_t msg;
+
+	bool success = false;
+	uint32_t returnValue = 0;
+	fs_descriptor_t descriptor = -1;
+
+	// initialize the completion semaphore
+	SemaphoreHandle_t completion = xSemaphoreCreateBinary();
+
+	if(completion == nullptr) {
+		LOG(S_ERROR, "Can't allocate completion semaphore");
+		return nullptr;
+	}
+
+	// set up message
+	memset(&msg, 0, sizeof(msg));
+
+	msg.completion = completion;
+
+	// write in descriptor and type
+	msg.descriptor = &descriptor;
+	msg.type = kFSMessageOpenFile;
+	// also populate success and return value pointers
+	msg.successPtr = &success;
+	msg.returnValuePtr = &returnValue;
+	// set filename
+	msg.payload.open.filename = name;
+
+	// convert flags
+	if(flags & Filesystem::READONLY) {
+		msg.payload.open.flags = (fs_open_flags_t) (msg.payload.open.flags | kOpenReadOnly);
+	} else if(flags & Filesystem::READWRITE) {
+		msg.payload.open.flags = (fs_open_flags_t) (msg.payload.open.flags | kOpenReadWrite);
+	}
+
+	if(flags & Filesystem::TRUNCATE) {
+		msg.payload.open.flags = (fs_open_flags_t) (msg.payload.open.flags | kOpenTruncate);
+	} else if(flags & Filesystem::APPEND) {
+		msg.payload.open.flags = (fs_open_flags_t) (msg.payload.open.flags | kOpenAppend);
+	}
+
+	if(flags & Filesystem::CREATE) {
+		msg.payload.open.flags = (fs_open_flags_t) (msg.payload.open.flags | kOpenCreate);
+	}
+	if(flags & Filesystem::WRITETHROUGH) {
+		msg.payload.open.flags = (fs_open_flags_t) (msg.payload.open.flags | kOpenWriteThrough);
+	}
+
+	// post message
+	err = Filesystem::sharedInstance()->postFSRequest(&msg);
+
+	if(err != 0) {
+		vSemaphoreDelete(msg.completion);
+		return nullptr;
+	}
+
+	// wait for completion
+	ok = xSemaphoreTake(msg.completion, portMAX_DELAY);
+
+	if(ok != pdPASS) {
+		LOG(S_ERROR, "Couldn't take semaphore: %u", ok);
+
+		vSemaphoreDelete(msg.completion);
+		return nullptr;
+	}
+
+	// delete semaphore
+	vSemaphoreDelete(msg.completion);
+
+	// if not successful, exit
+	if(!success) {
+		return nullptr;
+	}
+
+	// otherwise, create a file
+	return new fs::File(descriptor);
 }
 
 
@@ -875,6 +1048,10 @@ int Filesystem::flashCommandWithAddress(uint8_t command, uint32_t address, bool 
 s32_t _spiffs_read(u32_t addr, u32_t size, u8_t *dst) {
 	int err = gFilesystem->flashHAL->read(addr, size, dst);
 
+#if LOG_FLASH_READS
+	LOG(S_DEBUG, "Read from 0x%06x (size %u): %d", addr, size, err);
+#endif
+
 	if(err != 0) {
 		return SPIFFS_ERR_INTERNAL;
 	} else {
@@ -888,6 +1065,10 @@ s32_t _spiffs_read(u32_t addr, u32_t size, u8_t *dst) {
 s32_t _spiffs_write(u32_t addr, u32_t size, u8_t *src) {
 	int err = gFilesystem->flashHAL->write(addr, size, src);
 
+#if LOG_FLASH_WRITES
+	LOG(S_DEBUG, "Write to 0x%06x (size %u): %d", addr, size, err);
+#endif
+
 	if(err != 0) {
 		return SPIFFS_ERR_INTERNAL;
 	} else {
@@ -900,6 +1081,10 @@ s32_t _spiffs_write(u32_t addr, u32_t size, u8_t *src) {
  */
 s32_t _spiffs_erase(u32_t addr, u32_t size) {
 	int err = gFilesystem->flashHAL->erase(addr, size);
+
+#if LOG_FLASH_ERASE
+	LOG(S_DEBUG, "Erase %u bytes at 0x%06x: %d", size, addr, err);
+#endif
 
 	if(err != 0) {
 		return SPIFFS_ERR_INTERNAL;
