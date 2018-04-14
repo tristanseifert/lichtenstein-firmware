@@ -742,11 +742,13 @@ void Network::parseIPConfig(void *_file) {
 
 	if(err < 0) {
 		LOG(S_ERROR, "Couldn't read from file: %d", err);
+		goto done;
 	}
 
 	// parse config
 	LOG(S_DEBUG, "Read IP config:\n%s", buffer);
 
+done: ;
 	// clean up buffer
 	vPortFree(buffer);
 }

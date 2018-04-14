@@ -375,6 +375,11 @@ void Filesystem::taskEntry(void) {
 
 	if(err != 0) {
 		LOG(S_FATAL, "Couldn't initialize SPIFFS: %d", err);
+
+		while(1) {
+			// should never get here
+			vTaskDelay(1000);
+		}
 		return;
 	}
 
@@ -591,11 +596,18 @@ int Filesystem::spiffsMount(bool triedFormat) {
 	int ret;
 
 	// allocate some buffers
-	this->fsWorkBuf = (uint8_t *) pvPortMalloc(FS_PAGE_SIZE * 2);
-	this->fsFileDescriptors = (uint8_t *) pvPortMalloc(FS_FDBUF_SIZE);
+	if(!this->fsWorkBuf) {
+		this->fsWorkBuf = (uint8_t *) pvPortMalloc(FS_PAGE_SIZE * 2);
+	}
+
+	if(!this->fsFileDescriptors) {
+		this->fsFileDescriptors = (uint8_t *) pvPortMalloc(FS_FDBUF_SIZE);
+	}
 
 #if USE_CACHE
-	this->fsCache = (uint8_t *) pvPortMalloc(FS_CACHE_BUF_SIZE);
+	if(!this->fsCache) {
+		this->fsCache = (uint8_t *) pvPortMalloc(FS_CACHE_BUF_SIZE);
+	}
 #endif
 
 	// set up the spiffs config

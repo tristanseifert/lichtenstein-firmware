@@ -13,8 +13,11 @@
 // writes larger than this will use DMA
 #define DMA_THRESHOLD							(1024*1024*4)
 
+// use DMA for reading from flash
+#define USE_READ_DMA						0
+
 // when enabled, use the word program instruction
-#define USE_WORD_PROGRAM_INSTRUCTION		0
+#define USE_WORD_PROGRAM_INSTRUCTION		1
 // log writes
 #define LOG_WRITES						0
 // set this variable to log invocations to the IO functions
@@ -84,11 +87,13 @@ int SST25VF016::read(uint32_t address, size_t size, void *dst) {
 #endif
 
 	// DMA can do a maximum of 64K so limit to that
+#if USE_READ_DMA
 	if(size >= 0xFFFF) {
 		LOG(S_ERROR, "Couldn't start transaction for read");
 
 		return -1;
 	}
+#endif
 
 
 	// start a flash transaction
@@ -110,18 +115,22 @@ int SST25VF016::read(uint32_t address, size_t size, void *dst) {
 	}
 
 	// if we have more than this threshold, use DMA; otherwise, read in a loop
+#if USE_READ_DMA
 	if(size > DMA_THRESHOLD) {
 		// TODO: implement DMA
 	} else {
+#endif
 		uint8_t *outBuf = reinterpret_cast<uint8_t *>(dst);
 
 		for(unsigned int i = 0; i < size; i++) {
 			// read a byte
 			outBuf[i] = this->fs->spiRead();
 		}
+#if USE_READ_DMA
 	}
+#endif
 
-	// end the flash transaction we started earlier
+	// end the flash transaction we started earlier1
 	this->fs->endFlashTransaction();
 
 	// if we get down here, everything should be good

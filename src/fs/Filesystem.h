@@ -90,7 +90,7 @@ class Filesystem {
 		void taskEntry(void);
 
 		// Size of the filesystem task stack, in 32-bit words
-		static const size_t TaskStackSize = 300;
+		static const size_t TaskStackSize = 350;
 		// Priority of the filesystem task
 		static const int TaskPriority = 3;
 		// how many messages can be pending at a time in the message queue
