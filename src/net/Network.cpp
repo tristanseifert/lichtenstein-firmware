@@ -741,6 +741,29 @@ void Network::parseIPConfig(void *_file) {
 	err = file->read(buffer, size);
 
 	if(err < 0) {
+		// set the default hostname
+		static const char *hostnameTemplate = "lichtenstein-00:00:00:00:00:00";
+
+		static const size_t hostnameSz = 48;
+		char *hostname = (char *) pvPortMalloc(hostnameSz);
+
+		if(hostname != nullptr) {
+			memset(hostname, 0, hostnameSz);
+			strncpy(hostname, hostnameTemplate, hostnameSz);
+
+			char macStr[18];
+			ip::Stack::macToString(this->stack->getMacAddress(), macStr, 18);
+
+			memcpy(&hostname[13], macStr, 17);
+
+			this->stack->setHostname(hostname);
+
+			vPortFree(hostname);
+		}
+		// use DHCP
+		this->stack->setUsesDHCP(true);
+
+		// print error message
 		LOG(S_ERROR, "Couldn't read from file: %d", err);
 		goto done;
 	}

@@ -23,7 +23,7 @@
 
 
 // enable to log information when packets are received
-#define DEBUG_PACKET_RECEPTION				0
+#define DEBUG_PACKET_RECEPTION				1
 // enable to log information when packets are transmitted
 #define DEBUG_PACKET_TRANSMISSION			0
 // log when the multicast filter is changed

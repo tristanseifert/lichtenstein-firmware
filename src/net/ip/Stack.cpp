@@ -57,7 +57,7 @@ Stack::Stack(Network *n) : net(n) {
 
 	this->useDHCP = false;
 #else
-	this->useDHCP = true;
+	this->useDHCP = false;
 #endif // TEST_STATIC
 #endif // DEBUG
 
@@ -122,6 +122,39 @@ void Stack::linkStateChanged(bool _linkUp) {
 
 		// clear ARP cache
 		this->arp->clearARPCache();
+	}
+}
+
+/**
+ * Changes the DHCP state. When enabling DHCP, this will immediately begin
+ * the process of acquiring an IP address.
+ *
+ * @param status New DHCP state
+ */
+void Stack::setUsesDHCP(bool status) {
+	// if we already use DHCP and we call it again, re-
+	if(this->useDHCP == status) {
+		return;
+	}
+
+	// if we're not using DHCP right now, activate it
+	if(this->useDHCP == false && status == true) {
+		LOG(S_DEBUG, "Enabling DHCP");
+
+		// reset DHCP client
+		this->dhcp->reset();
+
+		// if link is up, request a lease
+		if(this->linkUp) {
+			this->dhcp->requestIP();
+		}
+	}
+
+	// change the variable and kill the DHCP client if needed
+	this->useDHCP = status;
+
+	if(this->useDHCP == false) {
+		this->dhcp->reset();
 	}
 }
 

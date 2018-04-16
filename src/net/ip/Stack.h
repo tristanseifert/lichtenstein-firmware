@@ -45,6 +45,11 @@ namespace ip {
 				return this->isIPv4ConfigValid;
 			}
 
+			void setUsesDHCP(bool status);
+			bool isUsingDHCP(void) const {
+				return this->useDHCP;
+			}
+
 		// sockets
 		public:
 			UDPSocket *createUDPSocket(void);
